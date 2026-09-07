@@ -7,19 +7,31 @@ iOS 应用「小天天练跳绳」(App ID `com.playtime.ropecounter`)的**公开
 
 | 文件 | 内容 |
 |---|---|
-| `index.html` | 目录页 |
+| `index.html` | 目录页(静态网站索引文档) |
 | `privacy.html` | 隐私政策 v2.0(生效 2026-09-07) |
 | `terms.html` | 用户协议 v2.0(生效 2026-09-07) |
 | `support.html` | 支持与帮助(常见问题 + 联系邮箱) |
+| `404.html` | 错误文档 |
 | `style.css` | 唯一样式表 |
+
+## 托管(**两处,内容必须保持一致**)
+
+| 站点 | URL 形态 | 发布方式 |
+|---|---|---|
+| **Cloudflare Pages**(推荐填 ASC) | `https://xiaotiantian-legal.pages.dev/privacy`(**无 `.html`**) | mini 上 `npx wrangler pages deploy dist` 直传(**不接 GitHub 仓库**) |
+| **GitHub Pages**(备份) | `https://cnaron.github.io/xiaotiantian-legal/privacy.html` | `git push` 到 `main`,根目录发布 |
+
+⚠️ Cloudflare 会把 `.html` 后缀 308 跳转掉;GitHub Pages 不会。两套地址形态不同,内容相同。
+⚠️ **改文案要两边都发**:`git push` + 重跑一次 `wrangler pages deploy dist`。
+发布目录是 `dist/`(只含 6 个对外文件);`README.md` / `RECEIPT-X122.md` 不进 dist。
 
 ## 约定
 
 - **纯静态、零脚本**:全站没有 JavaScript、没有统计 / 广告 / 第三方资源、不设置 Cookie
   —— 与隐私政策里「不收集任何信息」的承诺保持一致。
+- **页面之间用相对链接**(`./privacy.html`)⇒ 换域名 / 换托管商不需要改任何文件。
 - **内容必须与 App 实际行为一致**:改 App 行为(权限、视频留存、付费档位)时,
   必须同步改本仓库对应段落并更新页顶版本号与生效日期。
-- 通过 GitHub Pages 从 `main` 分支根目录发布。
 
 ## 事实基线(2026-09-07)
 
