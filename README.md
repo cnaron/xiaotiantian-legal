@@ -1,38 +1,57 @@
 # 小天天练跳绳 · 法律与支持页
 
+> **X122 颗粒 2:已完成并上线(2026-09-07)。** 四页已改成 owner 现有线上页
+> `gugushizi.com/ropecounterprivacy.html` 的内容与样式;三个内容页去掉导航与页脚;
+> 目录页去掉 App ID 与联系邮箱;国内提速已量前量后。
+> **完整交付说明见 [`RECEIPT-X122-G2.md`](./RECEIPT-X122-G2.md)。**
+> 两处托管八条地址实测全 200、`redirects=0`;并排图与四页副本在 Air
+> `~/Downloads/xiaotiantian-legal-site/`。
+> 等 owner 拍板两项:① 样式取「按样式表写的值」还是「照抄老页面实际长相」(三栏并排图)
+> ② 联系邮箱 `003` 还是 `009`。
+
 iOS 应用「小天天练跳绳」(App ID `com.playtime.ropecounter`)的**公开静态页面**,
 供 App Store Connect 填写「隐私政策 URL」「支持 URL」,以及 App 内设置页链接使用。
 
-## 页面
+## 构建(2026-09-07 起)
+
+`docs/` 是**构建产物,不要直接手改**。源在:
+`template/shell.html`(外壳)+ `template/style.css`(样式)+ `content/<page>.html`(正文片段)
++ `content/pages.json`(标题/日期),改完跑 `python3 build.py` 重新生成 `docs/`。
+正文与外壳分离是为后续「站内编辑器(Pages Functions + KV)」预留的。
+
+## 页面(docs/ 下)
 
 | 文件 | 内容 |
 |---|---|
-| `index.html` | 目录页(静态网站索引文档) |
+| `index.html` | 目录页(静态网站索引文档)|
 | `privacy.html` | 隐私政策 v2.0(生效 2026-09-07) |
 | `terms.html` | 用户协议 v2.0(生效 2026-09-07) |
 | `support.html` | 支持与帮助(常见问题 + 联系邮箱) |
 | `404.html` | 错误文档 |
-| `style.css` | 唯一样式表 |
+| ~~`style.css`~~ | **已删**:样式在构建时内联进每页(零外链) |
 
 ## 托管(**两处,内容必须保持一致**)
 
 | 站点 | URL 形态 | 发布方式 |
 |---|---|---|
-| **Cloudflare Pages**(推荐填 ASC) | `https://xiaotiantian-legal.pages.dev/privacy`(**无 `.html`**) | mini 上 `npx wrangler pages deploy dist` 直传(**不接 GitHub 仓库**) |
-| **GitHub Pages**(备份) | `https://cnaron.github.io/xiaotiantian-legal/privacy.html` | `git push` 到 `main`,根目录发布 |
+| **Cloudflare Pages**(★ 主用,填 ASC) | `https://xiaotiantian-app.pages.dev/privacy`(**无 `.html`**,直接 200 零跳转) | mini 上 `npx wrangler pages deploy docs --project-name xiaotiantian-app` 直传(**不接 GitHub 仓库**) |
+| **GitHub Pages**(备份) | `https://cnaron.github.io/xiaotiantian-legal/privacy.html` | `git push` 到 `main`,**`/docs` 目录**发布 |
 
 ⚠️ Cloudflare 会把 `.html` 后缀 308 跳转掉;GitHub Pages 不会。两套地址形态不同,内容相同。
-⚠️ **改文案要两边都发**:`git push` + 重跑一次 `wrangler pages deploy dist`。
-**发布目录 = `docs/`**(只含 6 个对外文件)。两处托管都只发 `docs/`,
+⚠️ **改文案要两边都发**:改 `content/` → `python3 build.py` → `git push` + 重跑一次 `wrangler pages deploy docs`。
+⚠️ **还有一个内容已过时的重复站** `https://xiaotiantian-legal.pages.dev/` —— 本轮按 owner 令未动,
+  它仍是 2026-09-07 改版**之前**的内容(写着「不保存视频」「自动续费」)。**等 owner 裁:删掉,或也发一份。**
+**发布目录 = `docs/`**(只含对外文件)。两处托管都只发 `docs/`,
 仓库根的 `README.md` / `RECEIPT-X122.md` 属内部文档,**不会被公网访问到** ——
 这也是 owner 日后在 Cloudflare 里「Connect to Git」时能安全自动发布的前提
 (输出目录填 `docs`)。
 
 ## 约定
 
-- **纯静态、零脚本**:全站没有 JavaScript、没有统计 / 广告 / 第三方资源、不设置 Cookie
+- **纯静态、零脚本、零外链**:全站没有 JavaScript、没有统计 / 广告 / 第三方资源、没有外部字体、不设置 Cookie
   —— 与隐私政策里「不收集任何信息」的承诺保持一致。
 - **页面之间用相对链接**(`./privacy.html`)⇒ 换域名 / 换托管商不需要改任何文件。
+  (代价:Cloudflare 上站内点击会多一次 308;给 ASC / App 的入口 URL 一律用无后缀形式,零跳转。)
 - **内容必须与 App 实际行为一致**:改 App 行为(权限、视频留存、付费档位)时,
   必须同步改本仓库对应段落并更新页顶版本号与生效日期。
 
