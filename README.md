@@ -23,7 +23,10 @@ iOS 应用「小天天练跳绳」(App ID `com.playtime.ropecounter`)的**公开
 
 ⚠️ Cloudflare 会把 `.html` 后缀 308 跳转掉;GitHub Pages 不会。两套地址形态不同,内容相同。
 ⚠️ **改文案要两边都发**:`git push` + 重跑一次 `wrangler pages deploy dist`。
-发布目录是 `dist/`(只含 6 个对外文件);`README.md` / `RECEIPT-X122.md` 不进 dist。
+**发布目录 = `docs/`**(只含 6 个对外文件)。两处托管都只发 `docs/`,
+仓库根的 `README.md` / `RECEIPT-X122.md` 属内部文档,**不会被公网访问到** ——
+这也是 owner 日后在 Cloudflare 里「Connect to Git」时能安全自动发布的前提
+(输出目录填 `docs`)。
 
 ## 约定
 
