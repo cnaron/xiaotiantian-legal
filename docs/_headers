@@ -1,0 +1,8 @@
+# Cloudflare Pages 响应头。html 全部自包含(CSS 已内联),没有外链资源需要单独设缓存。
+# max-age 取 600:CF 边缘在每次 deploy 后自动失效,浏览器侧留 10 分钟,
+# owner 改完文案不会被自己的浏览器缓存挡住;s-maxage 交给 CF 自己管。
+/*
+  Cache-Control: public, max-age=600, stale-while-revalidate=86400
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: SAMEORIGIN
