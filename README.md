@@ -1,23 +1,45 @@
 # 小天天练跳绳 · 法律与支持页
 
-> **X122 颗粒 2:已完成并上线(2026-09-07)。** 四页已改成 owner 现有线上页
-> `gugushizi.com/ropecounterprivacy.html` 的内容与样式;三个内容页去掉导航与页脚;
-> 目录页去掉 App ID 与联系邮箱;国内提速已量前量后。
-> **完整交付说明见 [`RECEIPT-X122-G2.md`](./RECEIPT-X122-G2.md)。**
-> 两处托管八条地址实测全 200、`redirects=0`;并排图与四页副本在 Air
-> `~/Downloads/xiaotiantian-legal-site/`。
-> 等 owner 拍板两项:① 样式取「按样式表写的值」还是「照抄老页面实际长相」(三栏并排图)
-> ② 联系邮箱 `003` 还是 `009`。
+> **X122 颗粒 3:已完成并上线(2026-09-07)。站内多了一个带口令的文档编辑器。**
+> 打开 **<https://xiaotiantian-app.pages.dev/edit>** → 输口令 → 左边改字、右边同步看
+> 「发布出来长什么样」→ 点「保存并发布」,**约 3 秒**线上就换了,不用碰 GitHub。
+> 口令在 Air `~/Downloads/xiaotiantian-legal-site/EDIT-PASSPHRASE.txt`。
+> 完整交付说明见 [`RECEIPT-X122-G3.md`](./RECEIPT-X122-G3.md)。
+>
+> **⚠️ 正文的权威来源从此是 Cloudflare KV,不再是本仓库的 `content/`。**
+> owner 在网页上改完之后,仓库里的 `content/` 与 `docs/` 就落后了;
+> GitHub Pages 备份站(`cnaron.github.io/xiaotiantian-legal/`)**不会自动跟随**,
+> 只当应急。要把线上内容倒回仓库,见回执 §7「怎么同步回 GitHub 备份站」。
+>
+> 颗粒 2 遗留、仍等 owner 拍板两项:① 样式取「按样式表写的值」还是「照抄老页面实际长相」
+> ② 联系邮箱 `003` 还是 `009`。另有一个内容已过时的重复站 `xiaotiantian-legal.pages.dev` 待裁。
 
 iOS 应用「小天天练跳绳」(App ID `com.playtime.ropecounter`)的**公开静态页面**,
 供 App Store Connect 填写「隐私政策 URL」「支持 URL」,以及 App 内设置页链接使用。
+
+## 两条改文案的路(颗粒 3 起)
+
+| | A. 网页编辑器(owner 日常用) | B. 改仓库再发布(改样式/结构时用) |
+|---|---|---|
+| 入口 | <https://xiaotiantian-app.pages.dev/edit> | 本仓库 `content/` + `template/` |
+| 改的是 | Cloudflare KV 里的正文 | 仓库源文件 |
+| 生效 | 点「保存并发布」约 3 秒 | `python3 build.py` → `git push` → `source tools/cfenv.sh && npx wrangler pages deploy` |
+| 影响面 | 只换正文 | 外壳/样式/新页面都能改 |
+
+⚠️ **两条路会互相盖**:走 B 重新导入 KV(`python3 tools/kv_import.py`)会把 owner
+在网页上改的内容盖掉;反过来只发布代码(`wrangler pages deploy`)不会动 KV,是安全的。
+要先把线上内容拉回仓库,见回执 §7。
 
 ## 构建(2026-09-07 起)
 
 `docs/` 是**构建产物,不要直接手改**。源在:
 `template/shell.html`(外壳)+ `template/style.css`(样式)+ `content/<page>.html`(正文片段)
-+ `content/pages.json`(标题/日期),改完跑 `python3 build.py` 重新生成 `docs/`。
-正文与外壳分离是为后续「站内编辑器(Pages Functions + KV)」预留的。
++ `content/pages.json`(标题/日期)+ `template/render.js`(渲染器),
+改完跑 `python3 build.py` 重新生成 `docs/` 与 `functions/_lib/` 里的产物。
+`build.py` 会自检三件事,任一不过就构建失败:渲染器三份副本 sha256 一致 /
+正文用到的 class 都在渲染器白名单里 / **Function 侧组装出来的四页与 `docs/*.html` 逐字节相同**。
+
+单测:`node tools/test_render.mjs`(25 条,含 7 类 XSS 阴性对照)。
 
 ## 页面(docs/ 下)
 

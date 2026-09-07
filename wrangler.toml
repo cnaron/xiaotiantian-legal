@@ -1,0 +1,17 @@
+# Cloudflare Pages 项目配置(X122 颗粒 3 起)。
+# 发布:  source tools/cfenv.sh && npx wrangler pages deploy
+#   (发布目录由 pages_build_output_dir 指定,不必再在命令行给 docs)
+# KV 命名空间 id 不是机密,机密只有 EDIT_PASSPHRASE / EDIT_COOKIE_KEY 两个 secret,
+# 由 `npx wrangler pages secret put <名字>` 写入,不在本文件里。 2026.09.07 Naron
+name = "xiaotiantian-app"
+pages_build_output_dir = "docs"
+compatibility_date = "2026-09-07"
+
+[[kv_namespaces]]
+binding = "LEGAL_CONTENT"
+id = "c1f1ad2b441b4d2ba0fb896e375c2621"
+
+[env.preview]
+[[env.preview.kv_namespaces]]
+binding = "LEGAL_CONTENT"
+id = "c1f1ad2b441b4d2ba0fb896e375c2621"
