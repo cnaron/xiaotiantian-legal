@@ -1,0 +1,88 @@
+/* 小天天练跳绳 · 法律与支持页 —— 单一样式表,零外部资源、零脚本、零追踪 */
+:root {
+  --bg: #ffffff;
+  --fg: #1c1c1e;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --accent: #2f6fed;
+  --card: #f7f8fa;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111214;
+    --fg: #e9eaec;
+    --muted: #9aa0a6;
+    --line: #2a2d31;
+    --accent: #79a6ff;
+    --card: #17191c;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  padding: 0 16px 64px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.75 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+        "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+}
+.wrap { max-width: 760px; margin: 0 auto; }
+header.top {
+  padding: 28px 0 12px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
+}
+header.top h1 { font-size: 24px; line-height: 1.4; margin: 0 0 8px; }
+.meta { color: var(--muted); font-size: 14px; margin: 0; }
+nav.crumb { font-size: 14px; margin: 0 0 4px; }
+nav.crumb a { color: var(--accent); text-decoration: none; }
+h2 { font-size: 19px; margin: 32px 0 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+h3 { font-size: 16px; margin: 22px 0 8px; }
+p, li { font-size: 16px; }
+ul, ol { padding-left: 22px; }
+li { margin: 6px 0; }
+a { color: var(--accent); }
+code { background: var(--card); padding: 1px 5px; border-radius: 4px; font-size: 14px; }
+.callout {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin: 16px 0;
+}
+.callout p:first-child { margin-top: 0; }
+.callout p:last-child { margin-bottom: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0;
+  font-size: 15px;
+  display: block;
+  overflow-x: auto;
+}
+th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: var(--card); font-weight: 600; white-space: nowrap; }
+footer {
+  margin-top: 48px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+}
+footer a { margin-right: 14px; }
+.cards { display: grid; gap: 14px; margin: 24px 0; }
+.card {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  text-decoration: none;
+  color: inherit;
+  background: var(--card);
+}
+.card strong { display: block; font-size: 17px; color: var(--accent); margin-bottom: 4px; }
+.card span { color: var(--muted); font-size: 14px; }
+.qa { margin: 20px 0; }
+.qa .q { font-weight: 600; margin-bottom: 4px; }
+.qa .a { margin-top: 0; }
