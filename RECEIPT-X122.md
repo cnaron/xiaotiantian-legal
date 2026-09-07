@@ -124,6 +124,14 @@ Pages 关掉后源站已下线,但 Fastly CDN 上那份缓存(`cache-control: ma
 GitHub 流量 API 在关停时读数:`views=0 uniques=0` / `clones=0 uniques=0`
 (⚠️ 该 API 统计的是**仓库**访问,不含 Pages 站点访问;Pages 侧的访问只有我自己的探测)。
 
+### 3.1 一处构建红灯(已修,登记备查)
+
+推 `52aab00` 后 GitHub Pages 构建 **errored**(`Page build failed`):本回执 §4.1 里
+引用 ToS 草案占位符 `{{DEVELOPER_NAME}}` 时,Jekyll 把它当 Liquid 变量去解析,构建挂掉。
+**站点当时并没有断**(仍供上一版构建,页面 200)——这正是「构建红 ≠ 页面挂」的一例,
+两者要分开看。修法:加 `.nojekyll` 旁路 Jekyll(本站是纯静态 HTML,本就不需要它),
+`4b58dae` 构建 `built` 恢复正常。
+
 ---
 
 ## 4. 事实核对表(写进页面的每条 ↔ 代码出处)
