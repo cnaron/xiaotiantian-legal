@@ -195,6 +195,28 @@ export function firstPostBody_claudecode_20260908(body) {
   return rest.trim();
 }
 
+/**
+ * 把正文里的 markdown 图片写法 `![alt](url)` 整段去掉,只留文字。
+ *
+ * ★ 作用域是**显示层清洁**,不是图片能力。X123 颗粒 6 已按 owner 令把上传/嵌图/取图三条接口
+ *   和 R2 桶全部撤掉,这个函数不碰 R2、不产生 URL、也不给 App 任何图片字段 —— 它存在只因为
+ *   「撤掉能力 ≠ 撤掉历史」:颗粒 5 期间开出的工单(#5 / #6)正文里**已经**写进了
+ *   `![截图](https://…/api/feedback/img/…)` 这样几行字;另外 owner 在 GitHub 网页上回复时
+ *   拖一张图进去也会产生同样的写法。不剥的话,App 的对话气泡里会原样冒出这一行。
+ * ★ 必须在 firstPostBody / classifyComment **之前**调用:图行追加在正文最末尾,而
+ *   firstPostBody 只截【问题描述】那一段 —— 顺序反了图行会被截没(这条顺序在颗粒 5 就踩过)。
+ * ★ 诚实边界:只认 markdown 形式。GitHub 网页端有时生成 `<img src=...>` 的 HTML 形式,
+ *   本函数**不处理**(手上没有这种样本,不为想象中的输入写代码)。
+ * 2026.09.08 Naron
+ */
+export function stripImageMarkdown_claudecode_20260908(body) {
+  const s = String(body ?? '');
+  // 不写成 `re.test() 再 re.replace()` —— 带 /g 的正则有 lastIndex 状态,那种写法是个经典坑
+  const out = s.replace(/!\[[^\]]*\]\([^)\s]+\)/g, '');
+  if (out === s) return s;                         // 没有图 ⇒ 逐字节原样返回
+  return out.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 /** 一条评论是用户说的还是开发者说的;顺带把传输标记剥掉(标记是噪声,from 已经说清楚了) */
 export function classifyComment_claudecode_20260908(body) {
   const s = String(body ?? '');

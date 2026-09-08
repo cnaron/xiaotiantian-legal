@@ -2,11 +2,13 @@
 // 契约沿用 X123 颗粒 2 §2.2(那一版已被本版完整取代)。两处与 PHP 版**故意不同**(修 X121 颗粒 12 §10 报的毛病):
 //   ① 未知 id 一律 404(不再被 token 关挡成 403),见 _lib/ticket.js 顶部说明;
 //   ② 测试件的 state 回 `pending`(不再回契约里没有的 `test`),且首帖不会被回复顶掉。
-// X123 颗粒 5 追加:每条消息多一个 `images: []`(URL 数组)。
-//   ★ 剥图必须在 firstPostBody / classify **之前**做:attach 把 `![截图](url)` 追加在正文最末尾,
-//     而 firstPostBody 只截【问题描述】那一段 —— 顺序反了图就被截没了。
-//   ★ 剥掉之后正文里不再有 markdown 字面量,App 气泡里不会出现一行 `![截图](https://…)`。
-//   **纯新增字段**,老 App 忽略它也照常工作。 2026.09.08 Naron
+// X123 颗粒 6:颗粒 5 加的 `images: []` **已移除**(owner 令:不让用户上传图片,
+//   上传/嵌图/取图三条接口与 R2 桶都撤了)。App 侧同步在颗粒 16 不再读这个字段。
+//   ★ 但正文里遗留的 `![截图](url)` **仍然要剥**:颗粒 5 期间开出的工单正文里已经写进去了,
+//     owner 在 GitHub 网页上回复时拖图也会产生同样的写法 —— 不剥,App 气泡里就冒出这一行。
+//     剥的理由与作用域见 _lib/feedback.js 里 stripImageMarkdown 的注释。
+//   ★ 剥必须在 firstPostBody / classify **之前**做:图行在正文最末尾,而 firstPostBody
+//     只截【问题描述】那一段 —— 顺序反了图行会被截没。 2026.09.08 Naron
 import {
   RATE_MAX_20260908,
   json_claudecode_20260908 as json, timingSafeEqual_claudecode_20260908 as tseq,
@@ -14,8 +16,8 @@ import {
   ticketTokenValid_claudecode_20260908 as tokenValid, rateAllow_claudecode_20260908 as rateAllow,
   firstPostBody_claudecode_20260908 as firstPostBody,
   classifyComment_claudecode_20260908 as classify,
+  stripImageMarkdown_claudecode_20260908 as stripImages,
 } from '../../_lib/feedback.js';
-import { splitImages_claudecode_20260908 as splitImages } from '../../_lib/images.js';
 import {
   GH_REPO_20260908 as REPO, installationToken_claudecode_20260908 as installationToken,
   gh_claudecode_20260908 as gh,
@@ -52,7 +54,11 @@ export const onRequestGet = async ({ request, env }) => {
     return json({
       ok: true,
       ticket: { id, state: 'pending', createdAt: found.data.createdAt },
-      messages: (found.data.messages || []).map((m) => ({ ...m, images: m.images || [] })),
+      // 只回四个字段:颗粒 5 期间 attach 可能往 KV 里这条上写过 images,
+      // 白名单式挑字段 ⇒ 老数据里的 images 也不会漏出去(G6-NO-IMAGES-FIELD 查的就是这个)
+      messages: (found.data.messages || []).map((m) => ({
+        cid: m.cid || 0, from: m.from, body: m.body, at: m.at,
+      })),
     }, 200);
   }
   // 排队中(GitHub 暂时用不了):只有首帖
@@ -60,25 +66,23 @@ export const onRequestGet = async ({ request, env }) => {
     return json({
       ok: true,
       ticket: { id, state: 'pending', createdAt: found.data.createdAt },
-      messages: [{ cid: 0, from: 'user', body: found.data.desc || '', at: found.data.createdAt, images: [] }],
+      messages: [{ cid: 0, from: 'user', body: found.data.desc || '', at: found.data.createdAt }],
     }, 200);
   }
 
   const j = found.issue;
-  const head = splitImages(j.body || '');            // ★ 先剥图,再截【问题描述】那一段
+  const headBody = stripImages(j.body || '');       // ★ 先剥掉遗留图行,再截【问题描述】那一段
   const messages = [{
     cid: 0, from: 'user',
-    body: firstPostBody(head.body),
+    body: firstPostBody(headBody),
     at: j.created_at || '',
-    images: head.images,
   }];
   const cmt = await gh(ghToken, 'GET', `/repos/${REPO}/issues/${id}/comments?per_page=100`, null);
   if (cmt.ok && Array.isArray(cmt.json)) {
     for (const c of cmt.json) {
       if (!c || typeof c !== 'object') continue;
-      const split = splitImages(c.body);             // ★ 同样先剥图再分类
-      const cls = classify(split.body);
-      messages.push({ cid: c.id || 0, from: cls.from, body: cls.body, at: c.created_at || '', images: split.images });
+      const cls = classify(stripImages(c.body));    // ★ 同样先剥再分类
+      messages.push({ cid: c.id || 0, from: cls.from, body: cls.body, at: c.created_at || '' });
     }
   }
   return json({

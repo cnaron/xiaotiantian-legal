@@ -3,7 +3,10 @@
 // 与那一版的区别:不发邮件(GitHub App 开的 issue 会给 owner 发通知)、队列存 KV 不存文件、
 // **整条链路只用 Cloudflare + GitHub,不回落到 App server 或旧域名**。
 // X123 颗粒 5 追加:返回里多一个 `ticket.cid` —— 这次留言落在哪条消息上
-//   (新开单 = 0 即首帖;追加到老单 = 那条评论的 id)。App 拿它去调 /api/feedback/attach 传图。
+//   (新开单 = 0 即首帖;追加到老单 = 那条评论的 id)。
+// X123 颗粒 6:它当初是给 /api/feedback/attach 传图用的,那条接口已按 owner 令删掉。
+//   `cid` **保留**:reply 本来就回同一个东西、App 的「有新回复红点」判据在用它,
+//   而且它与图片无关(就是一条 GitHub 评论 id)。删它是白白制造一次契约变更。
 //   **纯新增字段**,老 App 读不到它也照常工作。 2026.09.08 Naron
 import {
   RATE_MAX_20260908, BODY_MAX_BYTES_20260908,
@@ -134,7 +137,7 @@ export const onRequestPost = async ({ request, env }) => {
   // ⑤ 开工单 / 追加到这台设备已有的工单;拿不到 token 就降级排队,对用户不报错
   const ghToken = await installationToken(env, kv);
   let mode = 'queued', ticketId = '', createdAt = nowIso, issueUrl = '', ghAction = '', ghErr = '';
-  let cid = 0;                       // 这次留言落在哪条消息上(首帖 = 0),给 attach 用
+  let cid = 0;                       // 这次留言落在哪条消息上(首帖 = 0)
 
   if (ghToken !== '') {
     let existing = 0;
@@ -199,7 +202,7 @@ async function searchDeviceIssue_claudecode_20260908(token, deviceId) {
 }
 
 /** 往这台设备已有的 issue 追加 [用户消息 #n];issue 关着先 reopen。首帖算 #1。
- *  cid = 新评论的 GitHub 评论 id(X123 颗粒 5:App 要拿它把图嵌到这条上)。 */
+ *  cid = 新评论的 GitHub 评论 id(App 的「有新回复红点」判据用它)。 */
 async function appendUserMessage_claudecode_20260908(token, issueNumber, bodyNoLog, log, logLines) {
   const base = `/repos/${REPO}/issues/${issueNumber}`;
   const issue = await gh(token, 'GET', base, null);
