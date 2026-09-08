@@ -13,6 +13,15 @@ let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 
 let cfg = WKWebViewConfiguration()
+// ★ X122 颗粒 7(2026-09-08):默认走**非持久**数据仓 + 忽略本地缓存。
+//   成因实测:CF 上这些页是 `max-age=0, must-revalidate` 但**没有 ETag / Last-Modified**
+//   (CF 把 Pages Functions 的 ETag 剥掉,颗粒 6 已登记)⇒ 没有校验器可用,
+//   WKWebView 的持久缓存会把**改版前**的页面原样画出来 —— 本轮就真的这么骗过一次,
+//   截图上还是「经我们的服务器转成电子邮件」,而同一时刻 curl 拿到的已是新版。
+//   ⇒ 截图工具默认不许吃缓存;要**故意**验缓存行为时设 RC_SHOT_CACHE=1。
+if ProcessInfo.processInfo.environment["RC_SHOT_CACHE"] != "1" {
+    cfg.websiteDataStore = .nonPersistent()
+}
 let web = WKWebView(frame: NSRect(x: 0, y: 0, width: width, height: 1000), configuration: cfg)
 let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 1000),
                    styleMask: [.borderless], backing: .buffered, defer: false)
@@ -32,7 +41,11 @@ web.navigationDelegate = nav
 
 let raw = args[1]
 if raw.hasPrefix("http") {
-    web.load(URLRequest(url: URL(string: raw)!))
+    var req = URLRequest(url: URL(string: raw)!)
+    if ProcessInfo.processInfo.environment["RC_SHOT_CACHE"] != "1" {
+        req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+    }
+    web.load(req)
 } else {
     let u = URL(fileURLWithPath: raw)
     web.loadFileURL(u, allowingReadAccessTo: u.deletingLastPathComponent())
