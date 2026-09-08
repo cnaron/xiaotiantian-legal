@@ -18,6 +18,22 @@ COND_BAN = ['自动续费', '免费试用', '自动扣款', '试用期']
 NEG_WORDS = ['不', '没有', '无', '未']
 TECH_BAN = ['静态页面', '托管', 'GitHub', 'Cloudflare', '编辑入口', '构建', 'Pages', 'wrangler']
 
+# ── G5-TECH 口径修订(X122 颗粒 7,2026.09.08 Naron)────────────────────────────
+# 这条闸的**本意**是「法律页不要讲**本站自己**是怎么托管/构建/编辑的」
+# (颗粒 5 的由来:owner 令删掉主页那段「关于本站」技术说明)。
+# 颗粒 7 之后,隐私政策必须**点名用户反馈的接收方**(Cloudflare 接口 + 开发者 GitHub
+# 私有仓库)—— 这是「数据给了谁」的法定披露,不是在讲本站的实现。
+# 原尺子按裸关键词匹配,会在**它最该放行的地方**先报警(X117 那条纪律)。
+# ⇒ 改法:不放宽关键词表,只把**逐字审过的这几句**先剥掉再扫。
+#    任何新写的、不在这张表里的 Cloudflare / GitHub 说法**照样红**(阴性对照见 §下)。
+TECH_ALLOW_20260908 = [
+    '部署在 <strong>Cloudflare</strong> 上的接口',
+    '开发者 <strong>GitHub 私有仓库里的一条工单</strong>',
+    'Cloudflare 侧一份 <strong>保留 30 天后自动删除</strong> 的发送记录',
+    'Cloudflare 侧那份发送记录满 30 天自动删除',
+    '开发者 GitHub 私有仓库里的一条工单',
+]
+
 
 def gate_nosite(texts):
     hits = [(f, len(re.findall(r'gugushizi', s, re.I))) for f, s in texts]
@@ -28,6 +44,8 @@ def gate_nosite(texts):
 def gate_tech(texts):
     hits = []
     for f, s in texts:
+        for ok_phrase in TECH_ALLOW_20260908:
+            s = s.replace(ok_phrase, '')
         for kw in TECH_BAN:
             for m in re.finditer(re.escape(kw), s):
                 hits.append((f, kw))
