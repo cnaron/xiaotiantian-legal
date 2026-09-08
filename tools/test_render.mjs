@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { render } from '../template/render.js';
+import { render, renderFull, renderPage } from '../template/render.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0, fail = 0;
@@ -20,8 +20,8 @@ const hasnt = (name, got, needle) => {
   else { fail++; console.log('  FAIL ' + name + '\n    got : ' + JSON.stringify(got) + '\n    must not contain: ' + JSON.stringify(needle)); }
 };
 
-console.log('[1] 四页正文 HTML 直通逐字节等价');
-for (const p of ['index', 'privacy', 'terms', 'support']) {
+console.log('[1] 片段页正文 HTML 直通逐字节等价(privacy/terms 已转整页模式,见 [4])');
+for (const p of ['index', 'support']) {
   const src = fs.readFileSync(path.join(ROOT, 'content', p + '.html'), 'utf8').replace(/\n+$/, '');
   eq('content/' + p + '.html 直通', render(src), src);
 }
@@ -74,6 +74,39 @@ console.log('[3] XSS / 白名单阴性对照');
   const r = render('<style>body{display:none}</style>');
   hasnt('style 不成标签', r, '<style');
 }
+
+// ── X122 颗粒 4:整页模式 ─────────────────────────────────────────────────────
+console.log('[4] 整页模式:owner 原版整页直通');
+for (const p of ['privacy', 'terms']) {
+  const src = fs.readFileSync(path.join(ROOT, 'content', p + '.html'), 'utf8').replace(/\n+$/, '');
+  eq('content/' + p + '.html 整页直通逐字节等价', renderFull(src), src);
+  eq('renderPage(fullpage) 不套外壳', renderPage('SHELL', 'CSS', { fullpage: true }, src), src + '\n');
+}
+eq('DOCTYPE 原样(大写)', renderFull('<!DOCTYPE html>\n<html lang="zh-CN"></html>'),
+   '<!DOCTYPE html>\n<html lang="zh-CN"></html>');
+eq('DOCTYPE 原样(小写也认,且不被改写)', renderFull('<!doctype html>\n<body></body>'),
+   '<!doctype html>\n<body></body>');
+eq('<style> 同源 @import 直通', renderFull("<style>@import url('assets/x.css');p{margin:0}</style>"),
+   "<style>@import url('assets/x.css');p{margin:0}</style>");
+eq('CSS 里的 > 选择器不被当标签', renderFull('<style>.a > .b{color:red}</style>'),
+   '<style>.a > .b{color:red}</style>');
+
+console.log('[5] 整页模式 XSS / 外域阴性对照');
+hasnt('整页模式仍然没有 <script>', renderFull('<body><script>alert(1)</script></body>'), '<script>');
+has('整页模式 <script> 被转义成文字', renderFull('<body><script>alert(1)</script></body>'), '&lt;script&gt;');
+hasnt('</style> 后面接 <script> 也挡住', renderFull('<style>p{}</style><script>alert(1)</script>'), '<script>');
+hasnt('<img src> 挡住', renderFull('<body><img src="https://evil/x.png"></body>'), '<img');
+hasnt('<link rel=stylesheet> 挡住', renderFull('<head><link rel="stylesheet" href="https://evil/x.css"></head>'), '<link');
+hasnt('<iframe> 挡住', renderFull('<body><iframe src="https://evil"></iframe></body>'), '<iframe');
+hasnt('<meta http-equiv=refresh> 挡住', renderFull('<head><meta http-equiv="refresh" content="0;url=https://evil"></head>'), '<meta http-equiv');
+hasnt('<style> 里 url(https://…) 整段被转义', renderFull('<style>body{background:url(https://evil/x.png)}</style>'), '<style>');
+hasnt('<style> 里 url(//evil) 整段被转义', renderFull('<style>body{background:url(//evil/x.png)}</style>'), '<style>');
+hasnt('<style> 里外域 @import 整段被转义', renderFull("<style>@import url('https://evil/x.css');</style>"), '<style>');
+hasnt('整页模式 onclick 仍被转义', renderFull('<body><p onclick="x()">hi</p></body>'), '<p onclick');
+hasnt('整页模式未知 class 仍被转义', renderFull('<body><p class="evil-class">hi</p></body>'), '<p class="evil-class"');
+hasnt('整页模式 javascript: 链接仍被转义', renderFull('<body><a href="javascript:alert(1)">x</a></body>'), '<a href="javascript:');
+hasnt('片段模式不认整页标签(<style> 仍被转义)', render('<style>p{}</style>'), '<style>');
+hasnt('片段模式不认 <html>', render('<div><html></html></div>'), '<html>');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

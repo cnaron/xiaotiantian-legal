@@ -32,6 +32,30 @@ const ALLOWED_CLASSES = new Set([
 
 const ALLOWED_ATTRS = new Set(['class', 'href']);
 
+// ── 整页模式(X122 颗粒 4)────────────────────────────────────────────────────
+// owner 要求 privacy / terms 直接用他原版页面的代码,原版是**整篇文档**(自带 <html>/<head>/
+// 内联 <style>),不是正文片段 ⇒ 这两页不套外壳,KV 里存的就是整页。
+// 下面三个集合**只列原版实测用到的标签/属性/class**(tools/adopt_original.py 产出后用脚本
+// 枚举出来的),不是把白名单放开:script / img / link / iframe / object / embed / http-equiv
+// 一个都没进来 ⇒ 整页模式下**结构上没有任何一条路能加载外域资源**,只剩 <style>,
+// 而 <style> 的内容由 checkCss() 再挡一道。 2026.09.08 Naron
+const FULL_EXTRA_TAGS = new Set([
+  'html', 'head', 'body', 'title', 'meta', 'style', 'header', 'main', 'h1',
+]);
+const FULL_EXTRA_ATTRS = new Set(['lang', 'charset', 'name', 'content']);
+const FULL_EXTRA_CLASSES = new Set(['hover:underline']);
+
+// 大小写不敏感(owner 手打 <!doctype html> 也认),但**原样吐回**,不规范化 ⇒ 字节不变
+const DOCTYPE_RE = /^<!DOCTYPE\s+html\s*>/i;
+
+// <style> 里唯一能外联的写法是 url(...) 与 @import;两者都只放行同源相对路径。
+function checkCss(css) {
+  if (css.indexOf('<') !== -1) return false;                      // 防 </style> 之外的标签注入
+  if (/url\(\s*['"]?\s*(?:[a-zA-Z][a-zA-Z0-9+.-]*:|\/\/)/.test(css)) return false;   // url(https:… / url(//…)
+  if (/@import[^;]*(?:[a-zA-Z][a-zA-Z0-9+.-]*:\/\/|\/\/)/.test(css)) return false;     // @import 外域
+  return true;
+}
+
 function escapeHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
           .replace(/"/g, '&quot;');
@@ -45,13 +69,22 @@ function safeHref(v) {
 }
 
 // ── 逐 token 校验;通过的 token 原样返回(保字节),不通过的整段转义 ────────────
-function sanitizeHtml(src) {
+function sanitizeHtml(src, full) {
+  const tagOk = (t) => ALLOWED_TAGS.has(t) || (full && FULL_EXTRA_TAGS.has(t));
+  const attrOk = (a) => ALLOWED_ATTRS.has(a) || (full && FULL_EXTRA_ATTRS.has(a));
+  const classOk = (c) => ALLOWED_CLASSES.has(c) || (full && FULL_EXTRA_CLASSES.has(c));
   let out = '';
   let i = 0;
   while (i < src.length) {
     const lt = src.indexOf('<', i);
     if (lt === -1) { out += src.slice(i); break; }
     out += src.slice(i, lt);
+
+    // 整页模式:文档类型声明原样直通(只认这一个字面量,不认任何变体)
+    if (full) {
+      const dt = DOCTYPE_RE.exec(src.slice(lt, lt + 64));
+      if (dt) { out += dt[0]; i = lt + dt[0].length; continue; }
+    }
 
     // HTML 注释:必须完整闭合才直通(现有正文里有编辑指引注释)
     if (src.startsWith('<!--', lt)) {
@@ -68,7 +101,7 @@ function sanitizeHtml(src) {
     const tag = m[2].toLowerCase();
     const attrSrc = m[3];
 
-    if (!ALLOWED_TAGS.has(tag)) { out += escapeHtml(token); i = lt + token.length; continue; }
+    if (!tagOk(tag)) { out += escapeHtml(token); i = lt + token.length; continue; }
     if (closing) {
       if (attrSrc.trim() !== '') { out += escapeHtml(token); }
       else { out += token; }
@@ -82,19 +115,39 @@ function sanitizeHtml(src) {
     while ((a = attrRe.exec(attrSrc)) !== null) {
       const name = a[1].toLowerCase();
       const val = a[2] !== undefined ? a[2] : a[3] !== undefined ? a[3] : a[4] !== undefined ? a[4] : '';
-      if (!ALLOWED_ATTRS.has(name)) { ok = false; break; }
+      if (!attrOk(name)) { ok = false; break; }
       if (name === 'class') {
         for (const c of val.split(/\s+/).filter(Boolean)) {
-          if (!ALLOWED_CLASSES.has(c)) { ok = false; break; }
+          if (!classOk(c)) { ok = false; break; }
         }
         if (!ok) break;
       }
       if (name === 'href' && !safeHref(val)) { ok = false; break; }
     }
-    out += ok ? token : escapeHtml(token);
+    if (!ok) { out += escapeHtml(token); i = lt + token.length; continue; }
+
+    // <style>:内容不当 HTML 扫(CSS 里的 > 不是标签),整段过 checkCss 后原样直通。
+    // 注意 </style> 之后的内容照常回到主循环 ⇒ `</style><script>` 这种打法照样被转义。
+    if (full && tag === 'style') {
+      const bodyStart = lt + token.length;
+      const close = src.indexOf('</style>', bodyStart);
+      if (close === -1) { out += escapeHtml(token); i = bodyStart; continue; }
+      const css = src.slice(bodyStart, close);
+      if (!checkCss(css)) { out += escapeHtml(token); i = bodyStart; continue; }
+      out += token + css + '</style>';
+      i = close + '</style>'.length;
+      continue;
+    }
+
+    out += token;
     i = lt + token.length;
   }
   return out;
+}
+
+// 整页模式渲染:不切块、不走 Markdown,整篇文档逐 token 过白名单后原样吐回。
+export function renderFull(src) {
+  return sanitizeHtml(String(src == null ? '' : src).replace(/\r\n?/g, '\n'), true);
 }
 
 // ── Markdown 子集(行内)────────────────────────────────────────────────────
@@ -247,5 +300,7 @@ export function assemble(shell, cssMin, meta, body) {
 
 // 正文源 → 完整页面 HTML(公开页与预览共用这一条路径)
 export function renderPage(shell, cssMin, meta, src) {
+  // 整页模式(privacy / terms 用 owner 原版整页):外壳/内联样式/H1/META 全部不套
+  if (meta && meta.fullpage) return renderFull(src).replace(/\n+$/, '') + '\n';
   return assemble(shell, cssMin, meta, render(src).replace(/\n+$/, ''));
 }
