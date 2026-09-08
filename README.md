@@ -1,5 +1,15 @@
 # 小天天练跳绳 · 法律与支持页
 
+> **X122 颗粒 4:已完成并上线(2026-09-08)。隐私政策 / 用户协议改用 owner 原版页面。**
+> owner:「你这个隐私政策跟原版还是有差距呀,直接用原版代码就好了呀」⇒ 不再自己重写,
+> 把 `gugushizi.com/ropecounterprivacy.html` 与 `ropecounterterms.html` **整篇搬过来,
+> 原版 HTML 一字节不改**,只删页脚版权行(owner 规则 2)+ 把两处外链资源搬成同源。
+> 并排逐像素实测:**除被删的底栏外全等**。完整交付说明见 [`RECEIPT-X122-G4.md`](./RECEIPT-X122-G4.md)。
+>
+> ⚠️ **原版写于 2026-05,有几句跟 App 现状对不上**(最要紧:「绝不保存视频」/「月订阅 ¥6·年订阅 ¥58
+> 自动续费」),按 owner 令**一字未改**,全部列在回执 §6 差异表 —— **等 owner 定改不改**。
+> ⚠️ **GitHub Pages 备份站本轮没同步上**(mini 钥匙串锁着,推不了 GitHub),见回执 §7。
+
 > **X122 颗粒 3:已完成并上线(2026-09-07)。站内多了一个带口令的文档编辑器。**
 > 打开 **<https://xiaotiantian-app.pages.dev/edit>** → 输口令 → 左边改字、右边同步看
 > 「发布出来长什么样」→ 点「保存并发布」,**约 3 秒**线上就换了,不用碰 GitHub。
@@ -32,6 +42,11 @@ iOS 应用「小天天练跳绳」(App ID `com.playtime.ropecounter`)的**公开
 
 ## 构建(2026-09-07 起)
 
+**整页模式(颗粒 4 起)**:`privacy` / `terms` 在 `content/pages.json` 里带 `"fullpage": true`,
+它们的 `content/*.html` 就是**整篇文档**(自带 `<html>`/`<head>`/内联 `<style>`),
+外壳 `template/shell.html` 与 `template/style.css` 对这两页**完全不生效**。
+要重新从原版生成,跑 `python3 tools/adopt_original.py <原版html> <dumpcss产物> content/<page>.html`。
+
 `docs/` 是**构建产物,不要直接手改**。源在:
 `template/shell.html`(外壳)+ `template/style.css`(样式)+ `content/<page>.html`(正文片段)
 + `content/pages.json`(标题/日期)+ `template/render.js`(渲染器),
@@ -46,11 +61,12 @@ iOS 应用「小天天练跳绳」(App ID `com.playtime.ropecounter`)的**公开
 | 文件 | 内容 |
 |---|---|
 | `index.html` | 目录页(静态网站索引文档)|
-| `privacy.html` | 隐私政策 v2.0(生效 2026-09-07) |
-| `terms.html` | 用户协议 v2.0(生效 2026-09-07) |
+| `privacy.html` | **owner 原版隐私政策整页**(2026-05-12 版,整页模式,不套外壳) |
+| `terms.html` | **owner 原版用户协议整页**(2026-05-12 版,整页模式,不套外壳) |
 | `support.html` | 支持与帮助(常见问题 + 联系邮箱) |
 | `404.html` | 错误文档 |
 | ~~`style.css`~~ | **已删**:样式在构建时内联进每页(零外链) |
+| `assets/noto-sans-sc.css` + `assets/fonts/*.woff2` | 自托管中文字体(101 分片 4.5 MB),privacy/terms 用。**是 vendored 资产,不是构建产物,`build.py` 不动它** |
 
 ## 托管(**两处,内容必须保持一致**)
 
@@ -70,12 +86,17 @@ iOS 应用「小天天练跳绳」(App ID `com.playtime.ropecounter`)的**公开
 
 ## 约定
 
-- **纯静态、零脚本、零外链**:全站没有 JavaScript、没有统计 / 广告 / 第三方资源、没有外部字体、不设置 Cookie
-  —— 与隐私政策里「不收集任何信息」的承诺保持一致。
+- **纯静态、零脚本、零外域**:公开页没有 JavaScript、没有统计 / 广告 / 第三方资源、不设置 Cookie。
+  颗粒 4 起 privacy/terms 会额外取一份**同源**字体(`assets/noto-sans-sc.css`)——
+  仍然一个外部域名都不连,但不再是「每页一个自包含文件」了。
+  渲染器在整页模式下**结构性**保证这点:白名单里没有 script/img/link/iframe,
+  唯一的 `<style>` 口子由 `checkCss()` 挡住外域 `url()` 与 `@import`;`build.py` 另有一道零外域自检。
 - **页面之间用相对链接**(`./privacy.html`)⇒ 换域名 / 换托管商不需要改任何文件。
   (代价:Cloudflare 上站内点击会多一次 308;给 ASC / App 的入口 URL 一律用无后缀形式,零跳转。)
 - **内容必须与 App 实际行为一致**:改 App 行为(权限、视频留存、付费档位)时,
   必须同步改本仓库对应段落并更新页顶版本号与生效日期。
+  ⚠️ **颗粒 4 起 privacy/terms 暂时不满足这一条** —— owner 要求原样采用他的原版页面,
+  原版写于 2026-05,与下面的事实基线有 10 处出入(回执 §6 逐条列了)。**等 owner 裁决**。
 
 ## 事实基线(2026-09-07)
 
