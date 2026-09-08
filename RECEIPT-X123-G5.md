@@ -263,6 +263,7 @@ POST /api/feedback/attach {id, token, cid, keys[]}  → {ok, cid, n}
 | **G5-SENDLOG** | 🟢 | 记录页上有 `upload` / `attach` 两类行、有键名(63 处 `<32hex>.jpg`)、有「本日第 N 张」;**没有** `data:image`、**没有**图片本体。正文位置写的是「(图片,不记录内容)」/「(图片,只记键名)」 |
 | **G5-LEGAL** | 🟢 | 四张法律页与 `/edit` **一个字节没碰**(本轮只新增 `functions/api/feedback/` 下的文件与 `_lib/images.js`,`docs/` / `content/` / `template/` 无改动 —— `git diff --stat` 见 §8) |
 | **G5-PRIVACY-TEXT** | 🟢 | 按 owner 令**没有改任何隐私/权限文案**。但这带来一处**口径缺口**,登记在 §7④ 等 owner 裁 |
+| **G5-SECRET** | 🟢 | 全历史 `git grep`(`$(git rev-list --all)`):现役 `X-RC-Key` **0 处** · 本轮两个工单 token **各 0 处** · sendlog 口令 **0 处** · 回执/README 里**没有**任何可直接打开的真实图片地址(`/api/feedback/img/<数字>/<32hex>`,0 处)。**阴性对照**:搜一个确实在仓库里的串(`xiaotiantian-feedback`)⇒ 命中 145 处,证明这把 grep 本身能命中。测速用的临时口令文件(mini/appserver/VPS 的 `/tmp` 三处)收工已删 |
 | **G5-ISSUES** | 🟢 | 本轮开出真 issue **1 个**(#5,上限 1),收工时 `state=CLOSED` + 标签 `user-feedback,test`(`gh issue list` 回读确认;#1~#4 是前几个颗粒的,同样已关闭并打 test) |
 | **G5-PERF-CN** | 🟡 **样本太少,不判绿** | 国内侧交替 A/B 被我们自己的限流(40 次/10 分钟/IP)吃掉了大半样本,最后一轮只拿到 **n=4** 对:**4/4 全部变快,配对差中位 −0.31s**。方向一致但 n=4 的符号检验只到 p≈0.06,**够不上一条闸**。首尔边缘那边是 12/12、合计 −1.22s(§2.5)。详见 §7③ |
 
