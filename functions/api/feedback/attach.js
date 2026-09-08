@@ -10,7 +10,6 @@
 //   多出一个空气泡,而且 thread 里那条的 from 判定要另开一类。改原帖对 App 是零新增概念。
 // 2026.09.08 Naron
 import {
-  RATE_MAX_20260908,
   json_claudecode_20260908 as json, timingSafeEqual_claudecode_20260908 as tseq,
   clientIp_claudecode_20260908 as clientIp, cleanId_claudecode_20260908 as cleanId,
   ticketTokenValid_claudecode_20260908 as tokenValid,
@@ -23,18 +22,20 @@ import {
 } from '../../_lib/ghapp.js';
 import { resolveTicket_claudecode_20260908 as resolveTicket } from '../../_lib/ticket.js';
 import {
-  IMG_PER_MESSAGE_20260908,
+  IMG_PER_MESSAGE_20260908, ATTACH_RATE_MAX_20260908,
   keyBelongsTo_claudecode_20260908 as keyBelongs,
   imgUrl_claudecode_20260908 as imgUrl, imgMarkdown_claudecode_20260908 as imgMarkdown,
 } from '../../_lib/images.js';
 
-export const onRequestPost = async ({ request, env }) => {
+export const onRequestPost = async ({ request, env, waitUntil }) => {
   const kv = env.LEGAL_CONTENT || null;
+  const defer = typeof waitUntil === 'function' ? waitUntil : (p) => p;
 
   if (!env.RC_KEY || !tseq(env.RC_KEY, request.headers.get('x-rc-key') || '')) {
     return json({ ok: false, err: 'forbidden' }, 403);
   }
-  if (!(await rateAllow(kv, clientIp(request), 'reply', RATE_MAX_20260908.reply))) {
+  // 自己的桶,不蹭 reply 的(见 _lib/images.js 里那条实测记录)
+  if (!(await rateAllow(kv, clientIp(request), 'attach', ATTACH_RATE_MAX_20260908))) {
     return json({ ok: false, err: 'rate_limited' }, 429);
   }
 
@@ -67,7 +68,7 @@ export const onRequestPost = async ({ request, env }) => {
     if (!target) return json({ ok: false, err: 'not_found', detail: 'cid' }, 404);
     target.images = (target.images || []).concat(keys.map((k) => imgUrl(request, k)));
     if (kv) { try { await kv.put('fbtest:' + id, JSON.stringify(t), { expirationTtl: 30 * 24 * 3600 }); } catch (e) {} }
-    await sendlogRow(kv, keepBody, id, cid, keys, 'ok(test)', '');
+    defer(sendlogRow(kv, keepBody, id, cid, keys, 'ok(test)', ''));
     return json({ ok: true, cid, n: keys.length }, 200);
   }
   if (found.kind === 'queued') return json({ ok: false, err: 'not_ready' }, 409);
@@ -85,10 +86,10 @@ export const onRequestPost = async ({ request, env }) => {
   const body = String(cur.json.body || '') + '\n\n' + md + '\n';
   const res = await gh(ghToken, 'PATCH', path, { body });
   if (!res.ok) {
-    await sendlogRow(kv, keepBody, id, cid, keys, '写入失败', 'status=' + res.status + ' ' + res.err);
+    defer(sendlogRow(kv, keepBody, id, cid, keys, '写入失败', 'status=' + res.status + ' ' + res.err));
     return json({ ok: false, err: 'upstream_failed' }, 502);
   }
-  await sendlogRow(kv, keepBody, id, cid, keys, '已嵌入 ' + keys.length + ' 张', '');
+  defer(sendlogRow(kv, keepBody, id, cid, keys, '已嵌入 ' + keys.length + ' 张', ''));
   return json({ ok: true, cid, n: keys.length }, 200);
 };
 

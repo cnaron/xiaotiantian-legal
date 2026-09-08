@@ -14,6 +14,11 @@ export const IMG_MAX_BYTES_20260908 = 1048576;          // 单张 ≤1 MB
 export const IMG_PER_MESSAGE_20260908 = 4;              // 每条消息 ≤4 张
 export const IMG_PER_TICKET_DAY_20260908 = 20;          // 每工单每日 ≤20 张
 export const IMG_RATE_MAX_20260908 = 40;                // upload 桶:40 次 / 10 分钟 / IP
+// ★ attach 必须有**自己的**桶。第一版让它蹭 reply 桶(5 次/10 分钟),线上当场撞出 429:
+//   一次「带图提交 + 两次带图追问」= contact/attach/reply/attach/reply/attach,
+//   光 attach 就 3 次,再加 reply 2 次就把 5 次的桶吃满,用户第三句话直接发不出去。
+//   证据见回执 §6 G5-RATE-SPLIT(改之前实测 429,改之后同一序列 200)。 2026.09.08 Naron
+export const ATTACH_RATE_MAX_20260908 = 20;             // attach 桶:20 次 / 10 分钟 / IP
 export const IMG_TTL_DAYS_20260908 = 90;                // R2 生命周期(桶上配的规则,这里只是文档值)
 export const IMG_PATH_PREFIX_20260908 = '/api/feedback/img/';
 export const IMG_MD_ALT_20260908 = '截图';
