@@ -1,11 +1,11 @@
 // POST /api/feedback/reply —— 用户在 App 的工单页里追加一句。
-// 契约 = X123-G2 §2.3。两处与 PHP 版**故意不同**(修 X121 颗粒 12 §10 报的毛病):
+// 契约沿用 X123 颗粒 2 §2.3(那一版已被本版完整取代)。两处与 PHP 版**故意不同**(修 X121 颗粒 12 §10 报的毛病):
 //   ① 未知 id 一律 404(见 _lib/ticket.js);
 //   ② 测试模式也返回**递增的真 cid(>0)**、并把这句 append 进测试件 —— PHP 版恒回 cid:0
 //      且把首帖顶掉,会让 App 的「cid > lastSeenCid ⇒ 红点」整个失效。
 // 2026.09.08 Naron
 import {
-  RC_KEY_FALLBACK_20260908, RATE_MAX_20260908, REPLY_BODY_MAX_BYTES_20260908, REPLY_MAX_20260908,
+  RATE_MAX_20260908, REPLY_BODY_MAX_BYTES_20260908, REPLY_MAX_20260908,
   USER_REPLY_PREFIX_20260908,
   json_claudecode_20260908 as json, timingSafeEqual_claudecode_20260908 as tseq,
   clientIp_claudecode_20260908 as clientIp, cleanId_claudecode_20260908 as cleanId,
@@ -23,7 +23,8 @@ export const onRequestPost = async ({ request, env }) => {
   const kv = env.LEGAL_CONTENT || null;
   const ip = clientIp(request);
 
-  if (!tseq(env.RC_KEY || RC_KEY_FALLBACK_20260908, request.headers.get('x-rc-key') || '')) {
+  // key 只认 Pages secret;secret 缺席 ⇒ 全拒(不给默认值,见 _lib/feedback.js 顶部)
+  if (!env.RC_KEY || !tseq(env.RC_KEY, request.headers.get('x-rc-key') || '')) {
     return json({ ok: false, err: 'forbidden' }, 403);
   }
   if (!(await rateAllow(kv, ip, 'reply', RATE_MAX_20260908.reply))) {

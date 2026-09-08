@@ -1,4 +1,17 @@
-# 小天天练跳绳 · 法律与支持页
+# 小天天练跳绳 · 法律与支持页 + 反馈工单后端
+
+> ⚠️ **这个仓库是公开的(PUBLIC)。任何口令 / key / secret / 私钥一律不许写进来。**
+> 需要口令的东西一律放 Cloudflare Pages secret,交接项放 mini 本地 `/Users/cc/x123/`。
+
+> **X123 颗粒 3:已完成并上线(2026-09-08)。App 的「联系我们」工单后端搬到了这里。**
+> owner 令:**跳绳 App 相关的一切不再涉及 App server 与老域名,只用免费 Cloudflare。**
+> 于是这个站除了四张法律页,现在还跑着四个接口(`/api/feedback/{contact,thread,reply,sendlog}`):
+> 用户提交反馈 ⇒ 以 GitHub App `xiaotiantian-feedback` 的身份在私有仓库 `cnaron/rope-counter`
+> 开一个 issue ⇒ owner 收 GitHub 通知、直接在 issue 里回话 ⇒ App 拉得到、还能再回。
+> **不发邮件**(GitHub 自己会通知),**不依赖任何自有服务器**。
+> 端到端在生产上跑通了(含「开发者回一句 → App 看到 dev 消息且 cid>0」这条上一轮没验到的链路),
+> 完整交付说明见 [`RECEIPT-X123-G3.md`](./RECEIPT-X123-G3.md);
+> **App 侧要改的两处(base URL + `X-RC-Key` 新值)见其 §6,老服务器的退场清单见其 §8。**
 
 > **X122 颗粒 6:已完成并上线(2026-09-08)。「改一个词,线上只变那个词」现在是有闸把着的。**
 > owner:「编辑是生效了,但是好像总体行间距却改变了」⇒ 查下来**编辑链路是干净的**:

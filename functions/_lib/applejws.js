@@ -1,4 +1,5 @@
-// StoreKit2 AppTransaction 的 JWS 校验(Workers 版,移植自 gugushizi-server 的 PHP 实现)。
+// StoreKit2 AppTransaction 的 JWS 校验(Workers 版;逻辑从 X123 颗粒 2 的 PHP 版移植过来,
+// 但**不依赖它**:根证书就钉在本文件里,不去任何外部服务器取)。
 //
 // 做到哪一步(诚实边界,写在代码里免得回执和实现走散):
 //   ① 解析 header/payload —— 总是做;payload.receiptType 就是 Production/Sandbox;

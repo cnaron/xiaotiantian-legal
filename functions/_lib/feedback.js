@@ -1,7 +1,11 @@
 // 「联系我们」工单后端的公共件:清洗 / token / 限流 / issue 正文组装 / 发送记录。
-// 契约见 gugushizi-server/docs/X123-G2-TICKETS-20260908.md §2,行为对 App 必须一致。
+// 接口契约沿用 X123 颗粒 2 定下的那一份(行为对 App 必须一致);那一版跑在 App server 的 PHP 上,
+// **已由本文件所在的 Cloudflare 版完整取代**,本后端不依赖任何 App server / 旧域名。
 // 2026.09.08 Naron
-export const RC_KEY_FALLBACK_20260908 = 'xplKWMvye6xPk2OB';
+// ⚠️ 这里**不放**任何默认 key:本仓库是公开仓库,写死在这儿等于把 App 的请求头公之于众。
+// key 只从 Pages secret `RC_KEY` 读;secret 没配 ⇒ 所有请求 403(宁可全拒,不可默认放行)。
+// 2026-09-08 轮换过一次:上一版 key 曾被我误提交进这个公开仓库(history 里还有),
+// 现役 key 只在 Pages secret 与交接文件里。 2026.09.08 Naron
 export const RATE_WINDOW_SEC_20260908 = 600;
 export const RATE_MAX_20260908 = { contact: 5, thread: 30, reply: 5, sendlog: 60 };
 export const RATE_GLOBAL_DAY_20260908 = 300;

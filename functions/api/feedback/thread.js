@@ -1,10 +1,10 @@
 // GET /api/feedback/thread?id=&token= —— 拉整条对话。
-// 契约 = X123-G2 §2.2。两处与 PHP 版**故意不同**(修 X121 颗粒 12 §10 报的毛病):
+// 契约沿用 X123 颗粒 2 §2.2(那一版已被本版完整取代)。两处与 PHP 版**故意不同**(修 X121 颗粒 12 §10 报的毛病):
 //   ① 未知 id 一律 404(不再被 token 关挡成 403),见 _lib/ticket.js 顶部说明;
 //   ② 测试件的 state 回 `pending`(不再回契约里没有的 `test`),且首帖不会被回复顶掉。
 // 2026.09.08 Naron
 import {
-  RC_KEY_FALLBACK_20260908, RATE_MAX_20260908,
+  RATE_MAX_20260908,
   json_claudecode_20260908 as json, timingSafeEqual_claudecode_20260908 as tseq,
   clientIp_claudecode_20260908 as clientIp, cleanId_claudecode_20260908 as cleanId,
   ticketTokenValid_claudecode_20260908 as tokenValid, rateAllow_claudecode_20260908 as rateAllow,
@@ -21,7 +21,8 @@ export const onRequestGet = async ({ request, env }) => {
   const kv = env.LEGAL_CONTENT || null;
   const ip = clientIp(request);
 
-  if (!tseq(env.RC_KEY || RC_KEY_FALLBACK_20260908, request.headers.get('x-rc-key') || '')) {
+  // key 只认 Pages secret;secret 缺席 ⇒ 全拒(不给默认值,见 _lib/feedback.js 顶部)
+  if (!env.RC_KEY || !tseq(env.RC_KEY, request.headers.get('x-rc-key') || '')) {
     return json({ ok: false, err: 'forbidden' }, 403);
   }
   if (!(await rateAllow(kv, ip, 'thread', RATE_MAX_20260908.thread))) {

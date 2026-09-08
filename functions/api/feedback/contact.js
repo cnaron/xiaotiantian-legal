@@ -1,9 +1,10 @@
 // POST /api/feedback/contact —— 提交反馈 ⇒ 开 GitHub issue / 追加到本设备已有的 issue。
-// 契约 = gugushizi-server/docs/X123-G2-TICKETS-20260908.md §2.1(行为对 App 必须一致)。
-// 与 PHP 版的区别:不发邮件(GitHub App 开的 issue 会给 owner 发通知),队列存 KV 不存文件。
+// 契约沿用 X123 颗粒 2 §2.1(行为对 App 必须一致)。
+// 与那一版的区别:不发邮件(GitHub App 开的 issue 会给 owner 发通知)、队列存 KV 不存文件、
+// **整条链路只用 Cloudflare + GitHub,不回落到 App server 或旧域名**。
 // 2026.09.08 Naron
 import {
-  RC_KEY_FALLBACK_20260908, RATE_MAX_20260908, BODY_MAX_BYTES_20260908,
+  RATE_MAX_20260908, BODY_MAX_BYTES_20260908,
   DESC_MAX_20260908, CONTACT_MAX_20260908, META_MAX_20260908, GH_BODY_MAX_20260908,
   USER_MSG_PREFIX_20260908, OWNER_MENTION_20260908,
   json_claudecode_20260908 as json, timingSafeEqual_claudecode_20260908 as tseq,
@@ -37,7 +38,8 @@ export const onRequestPost = async ({ request, env }) => {
   const ip = clientIp(request);
 
   // ① key —— 缺或错一律 403,不区分(不给扫描者反馈)
-  if (!tseq(env.RC_KEY || RC_KEY_FALLBACK_20260908, request.headers.get('x-rc-key') || '')) {
+  // key 只认 Pages secret;secret 缺席 ⇒ 全拒(不给默认值,见 _lib/feedback.js 顶部)
+  if (!env.RC_KEY || !tseq(env.RC_KEY, request.headers.get('x-rc-key') || '')) {
     return json({ ok: false, err: 'forbidden' }, 403);
   }
   // ② 限流 —— 放在参数校验之前:任何一次尝试(哪怕参数错)都计数

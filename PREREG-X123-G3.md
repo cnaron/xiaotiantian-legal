@@ -54,7 +54,7 @@ App 的「有新回复红点」整个失效)。
 | POST | `/api/feedback/reply` | 用户追加一句 |
 | GET | `/api/feedback/sendlog?key=` | owner 看发送记录(HTML) |
 
-前三条要头 `X-RC-Key: xplKWMvye6xPk2OB`(沿用,写死在 App 里,**不是安全边界**);
+前三条要头 `X-RC-Key`(**值不写进这个公开仓库**;见回执 §7 —— 我第一版把它写进了代码,发现本仓库是 public 之后已轮换并去掉写死值);
 `X-RC-Test: 1` = 单次测试模式。
 
 **Base URL(交给 X121 颗粒 13 改 App)**:`https://xiaotiantian-app.pages.dev/api/feedback/`。
