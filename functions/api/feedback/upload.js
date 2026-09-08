@@ -8,7 +8,8 @@
 // ★ 两处「把等待藏起来」的写法,是量出来才加的(回执 §2.4:同一条链路、同一份 98 KB 图,
 //   打「读完就扔」的探针 1.92s,打这个接口 3.57s ⇒ 服务端自己吃掉 1.56s,占总时长 44%):
 //   ① 限流那次 KV 往返与**读上传体**并发跑 —— 反正都要等用户把字节传完,KV 的延迟就白赚了;
-//   ② 发送记录用 waitUntil 事后写 —— 用户不需要等我们记完账才拿到 URL。
+//   ② 发送记录、每日配额的**写**都用 waitUntil 事后做 —— 放不放行由**读**决定,
+//      用户不需要等我们把账记完才拿到 URL。
 //   语义都没变:限流照样「每次尝试都计数」,记录照样写。
 // 传图**不查工单存不存在**:token = HMAC(TICKET_SECRET, id),算得出来就证明这个 id 是我们发的;
 //   查一次存在性要多打一次 GitHub,而国内链路上每一次往返都很贵(见回执 §2 耗时表)。
@@ -59,7 +60,7 @@ export const onRequestPost = async ({ request, env, waitUntil }) => {
   if (buf.byteLength > IMG_MAX_BYTES_20260908) return json({ ok: false, err: 'too_large' }, 413);
   if (!looksLikeJpeg(buf)) return json({ ok: false, err: 'bad_request', detail: 'not_jpeg' }, 400);
 
-  const quota = await dayQuota(kv, id);
+  const quota = await dayQuota(kv, id, new Date(), defer);
   if (!quota.allow) return json({ ok: false, err: 'rate_limited', detail: 'daily_image_quota' }, 429);
 
   if (!env.FEEDBACK_IMG) return json({ ok: false, err: 'storage_unavailable' }, 500);

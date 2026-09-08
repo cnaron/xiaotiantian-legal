@@ -74,14 +74,21 @@ export function looksLikeJpeg_claudecode_20260908(buf) {
   return b[b.length - 2] === 0xFF && b[b.length - 1] === 0xD9;
 }
 
-/** 每工单每日配额。@returns {allow, used} */
-export async function imgDayQuota_claudecode_20260908(kv, ticketId, now = new Date()) {
+/**
+ * 每工单每日配额。@returns {allow, used}
+ * defer:把「记这一笔」的 KV 写入挪出关键路径(waitUntil)。放不放行是**读**决定的,
+ *   写只是记账 —— 让用户等这一次全球 KV 写入没有意义(实测这一改省 0.7~0.9s,见回执 §2.5)。
+ *   代价:并发上传时几个请求可能读到同一个计数 ⇒ 当天最多略微超过 20 张。本来就有这个竞态,
+ *   不是这次引入的;而且我们给 App 的建议就是**逐张串行**(§2.3)。
+ */
+export async function imgDayQuota_claudecode_20260908(kv, ticketId, now = new Date(), defer = null) {
   if (!kv) return { allow: true, used: 0 };
+  const write = typeof defer === 'function' ? defer : (pr) => pr;
   const day = now.toISOString().slice(0, 10).replace(/-/g, '');
   const key = 'fbimgday:' + ticketId + ':' + day;
   let n = 0;
   try { n = parseInt((await kv.get(key)) || '0', 10) || 0; } catch (e) { n = 0; }
   if (n >= IMG_PER_TICKET_DAY_20260908) return { allow: false, used: n };
-  try { await kv.put(key, String(n + 1), { expirationTtl: 2 * 24 * 3600 }); } catch (e) {}
+  write(kv.put(key, String(n + 1), { expirationTtl: 2 * 24 * 3600 }).catch(() => {}));
   return { allow: true, used: n + 1 };
 }
