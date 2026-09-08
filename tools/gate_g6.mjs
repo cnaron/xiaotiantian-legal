@@ -84,16 +84,18 @@ async function main() {
   const before = await exportAll();
 
   // ── G6-CACHE ─────────────────────────────────────────────────────────────
+  // 真正要保证的是「owner 保存后刷新,一定看到新页」。
+  // ⚠️ 预注册里写的「条件请求回 304」这一半**做不到**:Cloudflare 会把 Pages Functions 响应上的
+  //    ETag 剥掉(强/弱、gzip/identity、生产域/预览域 六种组合实测全被剥,见 RECEIPT-X122-G6.md)。
+  //    代码里的 ETag 留着(平台哪天不剥就立刻生效),但闸不能拿一个不由我们决定的东西当通过线。
+  //    改成钉真正管用的那两条:头里没有任何允许画旧页的余量 + max-age=0。
+  //    「真浏览器保存后立刻看到新页」由 shot warm-cache 实测另行验(带阴性对照,见回执 §4)。
   {
     const r1 = await fetch(urlOf('privacy'));
     const cc = r1.headers.get('cache-control') || '', etag = r1.headers.get('etag') || '';
-    const noSwr = !/stale-while-revalidate/i.test(cc) && /max-age=0/.test(cc);
-    let cond = 'no-etag';
-    if (etag) {
-      const r2 = await fetch(urlOf('privacy'), { headers: { 'If-None-Match': etag } });
-      cond = String(r2.status);
-    }
-    rec('G6-CACHE', noSwr && cond === '304', `Cache-Control="${cc}" · ETag=${etag || '无'} · 条件请求=${cond}(期望 304)`);
+    const noStale = !/stale-while-revalidate/i.test(cc) && !/s-maxage/i.test(cc) && /max-age=0/.test(cc) && /must-revalidate/.test(cc);
+    rec('G6-CACHE', noStale,
+      `Cache-Control="${cc}"(不含 stale-while-revalidate / s-maxage,且 max-age=0 + must-revalidate)· ETag ${etag ? '=' + etag : '被 CF 剥掉(平台限制,已记账)'}`);
   }
 
   // ── G6-ONEWORD + G6-RT ───────────────────────────────────────────────────

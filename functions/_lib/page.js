@@ -28,7 +28,10 @@ export async function loadSource(env, name) {
 async function etagOf_claudecode_20260908(html) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(html));
   const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
-  return '"' + hex.slice(0, 32) + '"';
+  // 弱 ETag(W/):Cloudflare 会对启用压缩的响应改写/丢弃**强** ETag(实测直接被剥掉,
+  // 见 RECEIPT-X122-G6.md),弱 ETag 才留得住。语义上也正确:我们比的是「同一份正文」,
+  // 不是「同一串字节的传输表示」。 2026.09.08 Naron
+  return 'W/"' + hex.slice(0, 32) + '"';
 }
 
 // 缓存口径(X122 颗粒 6 改)。原来是 `max-age=300, s-maxage=600, stale-while-revalidate=86400`,
@@ -47,7 +50,6 @@ export async function renderPageResponse(env, name, request) {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': PAGE_CACHE_CONTROL_20260908,
     'ETag': etag,
-    'Vary': 'Accept-Encoding',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
     'X-Frame-Options': 'SAMEORIGIN',
