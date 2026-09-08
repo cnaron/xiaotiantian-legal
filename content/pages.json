@@ -10,23 +10,15 @@
   },
   "privacy": {
     "out": "privacy.html",
+    "fullpage": true,
     "title": "小天天练跳绳 隐私政策",
-    "desc": "「小天天练跳绳」隐私政策：零联网上传、零第三方 SDK、无账号，数据只存在你的设备上。",
-    "h1": "小天天练跳绳 隐私政策",
-    "meta": [
-      "版本更新日期：2026年9月7日",
-      "版本生效日期：2026年9月7日"
-    ]
+    "note": "整页模式:正文=owner 原版 ropecounterprivacy.html 整篇文档,外壳/样式/H1/META 一概不套(X122 颗粒 4)"
   },
   "terms": {
     "out": "terms.html",
+    "fullpage": true,
     "title": "小天天练跳绳 用户协议",
-    "desc": "「小天天练跳绳」用户协议：使用许可、买断制购买与到期规则、免责声明、未成年人条款。",
-    "h1": "小天天练跳绳 用户协议",
-    "meta": [
-      "版本更新日期：2026年9月7日",
-      "版本生效日期：2026年9月7日"
-    ]
+    "note": "整页模式:正文=owner 原版 ropecounterterms.html 整篇文档,外壳/样式/H1/META 一概不套(X122 颗粒 4)"
   },
   "support": {
     "out": "support.html",

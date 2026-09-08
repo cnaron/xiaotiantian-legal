@@ -24,14 +24,21 @@ bodies = {}
 for name, meta in pages.items():
     body = (ROOT / "content" / f"{name}.html").read_text(encoding="utf-8").rstrip("\n")
     bodies[name] = body
-    meta_html = "\n".join(f"            <p>{line}</p>" for line in meta["meta"])
-    html = (shell
-            .replace("{{TITLE}}", meta["title"])
-            .replace("{{DESC}}", meta["desc"])
-            .replace("{{H1}}", meta["h1"])
-            .replace("{{META}}", meta_html)
-            .replace("{{CSS}}", css_min)
-            .replace("{{BODY}}", body))
+    if meta.get("fullpage"):
+        # 整页模式(X122 颗粒 4):正文就是整篇文档,不套外壳。这里 Python 侧只是原样落盘,
+        # **真正的校验交给 check_parity.mjs** —— 它用 JS 侧真渲染器跑一遍 renderPage,
+        # 与这里写出的文件逐字节比。等价于断言「这份原版 HTML 整篇过白名单一字节不变」,
+        # 任何一个标签/属性/class 没进白名单,构建就会失败。
+        html = body + "\n"
+    else:
+        meta_html = "\n".join(f"            <p>{line}</p>" for line in meta["meta"])
+        html = (shell
+                .replace("{{TITLE}}", meta["title"])
+                .replace("{{DESC}}", meta["desc"])
+                .replace("{{H1}}", meta["h1"])
+                .replace("{{META}}", meta_html)
+                .replace("{{CSS}}", css_min)
+                .replace("{{BODY}}", body))
     target = out_dir / meta["out"]
     target.write_text(html, encoding="utf-8")
     print(f"{target.relative_to(ROOT)}  {len(html.encode('utf-8')):>6} B")
@@ -48,8 +55,12 @@ if len(set(shas.values())) != 1:
 print("render.js sha256 =", next(iter(shas.values())), "(3 份一致)")
 
 # ── class 白名单自检:正文里用到的 class 必须全在 render.js 的白名单里 ─────────
-wl = set(re.findall(r"'([a-z0-9-]+)'", re.search(
-    r"ALLOWED_CLASSES = new Set\(\[(.*?)\]\)", src_render.read_text(encoding="utf-8"), re.S).group(1)))
+_rj = src_render.read_text(encoding="utf-8")
+wl = set()
+for _name in ("ALLOWED_CLASSES", "FULL_EXTRA_CLASSES"):
+    _m = re.search(_name + r" = new Set\(\[(.*?)\]\)", _rj, re.S)
+    if _m:   # 类名可能带冒号(hover:underline),正则里要放行
+        wl |= set(re.findall(r"'([a-z0-9:-]+)'", _m.group(1)))
 used = set()
 for b in bodies.values():
     for cs in re.findall(r'class="([^"]*)"', b):
@@ -58,6 +69,28 @@ missing = used - wl
 if missing:
     print("构建失败:正文用到但不在 render.js 白名单里的 class:", sorted(missing), file=sys.stderr); sys.exit(1)
 print(f"class 白名单自检通过(正文用 {len(used)} 个,白名单 {len(wl)} 个)")
+
+# ── 零外域自检(X122 颗粒 4)────────────────────────────────────────────────
+# 整页模式把 <style> 放进了正文,外域引用的口子比以前大 ⇒ 构建时再堵一道。
+# 白名单里本来就没有 script/img/link/iframe,这里查的是「万一有人手改了 render.js」。
+EXT = [
+    (r"<\s*(script|img|link|iframe|object|embed|video|audio|source|track)\b", "外部资源标签"),
+    (r"\bsrc\s*=", "src 属性"),
+    (r"\bsrcset\s*=", "srcset 属性"),
+    (r"url\(\s*['\"]?\s*(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//)", "CSS url() 指向外域"),
+    (r"@import[^;]*(?:[a-zA-Z][a-zA-Z0-9+.-]*://|//)", "@import 外域"),
+]
+ext_bad = []
+for _n, _b in bodies.items():
+    for _re, _why in EXT:
+        for _m in re.finditer(_re, _b, re.I):
+            ext_bad.append(f"{_n}: {_why} → {_b[_m.start():_m.start()+60]!r}")
+if ext_bad:
+    print("构建失败:正文里有外域资源引用", file=sys.stderr)
+    for _x in ext_bad:
+        print("   " + _x, file=sys.stderr)
+    sys.exit(1)
+print(f"零外域自检通过({len(bodies)} 页正文,0 处外部资源引用)")
 
 # ── 打包给 Function 的资产 ──────────────────────────────────────────────────
 assets = ROOT / "functions" / "_lib" / "assets.js"

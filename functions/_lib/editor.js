@@ -42,6 +42,10 @@ button{width:100%;margin-top:.9rem;font:inherit;font-weight:600;padding:.65rem;b
 
 const head = (title, css) =>
   `<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n` +
+  // 预览 iframe 用 srcdoc,相对路径按父文档 URL 解析。编辑器住在 /<page>/edit,
+  // 不钉这个 base,整页模式里的 assets/noto-sans-sc.css 会被解析成 /<page>/assets/…
+  // ⇒ 预览就缺字体、跟发布出来的不一样。编辑器自己的 URL 全是绝对路径,不受影响。
+  `<base href="/">\n` +
   `<meta name="viewport" content="width=device-width, initial-scale=1.0">\n` +
   `<meta name="robots" content="noindex, nofollow, noarchive">\n<title>${title}</title>\n` +
   `<style>${css}</style>\n</head>\n`;
