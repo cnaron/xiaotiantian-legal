@@ -1,8 +1,12 @@
 # Cloudflare Pages 响应头。html 全部自包含(CSS 已内联),没有外链资源需要单独设缓存。
-# max-age 取 600:CF 边缘在每次 deploy 后自动失效,浏览器侧留 10 分钟,
-# owner 改完文案不会被自己的浏览器缓存挡住;s-maxage 交给 CF 自己管。
+#
+# ⚠️ X122 颗粒 6 改:原来这里是 `max-age=600, stale-while-revalidate=86400`。那条 SWR 的意思是
+# 「过期后 24 小时内浏览器可以先把上次存的旧页画出来,再后台更新」——实测它让 owner 在
+# `/edit` 里改字之前,一直看的是 68 分钟前的旧页;一保存被迫取新,于是「只删了一行」看起来
+# 像「整页重排了」。正文页的正确口径是 max-age=0 + 每次条件请求(见 functions/_lib/page.js)。
+# 这里管的是**静态回退那一份**,同样不能留画旧页的余量。 2026.09.08 Naron
 /*
-  Cache-Control: public, max-age=600, stale-while-revalidate=86400
+  Cache-Control: public, max-age=0, must-revalidate
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   X-Frame-Options: SAMEORIGIN

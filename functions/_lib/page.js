@@ -24,17 +24,39 @@ export async function loadSource(env, name) {
   return { src: FALLBACK[name], from: 'fallback' };
 }
 
-export async function renderPageResponse(env, name) {
+// 正文的强 ETag —— 让「每次都问一句」的代价降到一个 304。 2026.09.08 Naron
+async function etagOf_claudecode_20260908(html) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(html));
+  const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return '"' + hex.slice(0, 32) + '"';
+}
+
+// 缓存口径(X122 颗粒 6 改)。原来是 `max-age=300, s-maxage=600, stale-while-revalidate=86400`,
+// 那条 SWR 的意思是「过期后 24 小时内浏览器可以先把上次存的旧页画出来,再后台更新」——
+// 实测它让 owner 在编辑前一直看的是 68 分钟前的旧页,一保存才跳到最新,于是「只删了一行」
+// 看起来像「整页重排了」(成因取证见 PREREG-X122-G6.md §一)。
+// 「保存并发布」要名副其实,这里就不能留任何允许画旧页的余量:每次都条件请求,
+// 没变回 304(几百字节),变了立刻拿新的。 2026.09.08 Naron
+const PAGE_CACHE_CONTROL_20260908 = 'public, max-age=0, must-revalidate';
+
+export async function renderPageResponse(env, name, request) {
   const { src, from } = await loadSource(env, name);
   const html = buildPage(name, src);
-  return new Response(html, {
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'public, max-age=300, s-maxage=600, stale-while-revalidate=86400',
-      'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'no-referrer',
-      'X-Frame-Options': 'SAMEORIGIN',
-      'X-Content-Source': from,
-    },
-  });
+  const etag = await etagOf_claudecode_20260908(html);
+  const headers = {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': PAGE_CACHE_CONTROL_20260908,
+    'ETag': etag,
+    'Vary': 'Accept-Encoding',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'X-Frame-Options': 'SAMEORIGIN',
+    'X-Content-Source': from,
+  };
+  // 条件请求:内容没变就别再传一遍整页
+  const inm = request && request.headers ? request.headers.get('If-None-Match') : null;
+  if (inm && inm.split(',').some((t) => t.trim() === etag)) {
+    return new Response(null, { status: 304, headers });
+  }
+  return new Response(html, { headers });
 }
