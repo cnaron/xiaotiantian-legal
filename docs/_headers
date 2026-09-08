@@ -6,3 +6,10 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   X-Frame-Options: SAMEORIGIN
+
+# 自托管字体(X122 颗粒 4)。文件名带内容指纹 ⇒ 可以放心长缓存。
+# 编辑器的预览 iframe 是 sandbox="" 的不透明源,取字体时带 Origin: null,
+# 没有下面这条 CORS 头就加载不到 ⇒ 预览会跟发布出来的长得不一样。
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+  Access-Control-Allow-Origin: *
