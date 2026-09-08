@@ -26,13 +26,10 @@ TECH_BAN = ['静态页面', '托管', 'GitHub', 'Cloudflare', '编辑入口', '�
 # 原尺子按裸关键词匹配,会在**它最该放行的地方**先报警(X117 那条纪律)。
 # ⇒ 改法:不放宽关键词表,只把**逐字审过的这几句**先剥掉再扫。
 #    任何新写的、不在这张表里的 Cloudflare / GitHub 说法**照样红**(阴性对照见 §下)。
-TECH_ALLOW_20260908 = [
-    '部署在 <strong>Cloudflare</strong> 上的接口',
-    '开发者 <strong>GitHub 私有仓库里的一条工单</strong>',
-    'Cloudflare 侧一份 <strong>保留 30 天后自动删除</strong> 的发送记录',
-    'Cloudflare 侧那份发送记录满 30 天自动删除',
-    '开发者 GitHub 私有仓库里的一条工单',
-]
+# X122 颗粒 9 起 **清空**:这 5 条豁免是颗粒 7 为「必须点名反馈接收方」开的口子,
+# 颗粒 9 按 owner 令把那几句实现描述整段删掉了 ⇒ 豁免失去对象,留着只会遮挡未来的新违规。
+# 清空后 G5-TECH 恢复满强度(词表一个字没放宽)。原 5 条见 RECEIPT-X122-G7.md §5①。
+TECH_ALLOW_20260908 = []
 
 
 def gate_nosite(texts):
