@@ -2,7 +2,9 @@
 // 契约沿用 X123 颗粒 2 §2.1(行为对 App 必须一致)。
 // 与那一版的区别:不发邮件(GitHub App 开的 issue 会给 owner 发通知)、队列存 KV 不存文件、
 // **整条链路只用 Cloudflare + GitHub,不回落到 App server 或旧域名**。
-// 2026.09.08 Naron
+// X123 颗粒 5 追加:返回里多一个 `ticket.cid` —— 这次留言落在哪条消息上
+//   (新开单 = 0 即首帖;追加到老单 = 那条评论的 id)。App 拿它去调 /api/feedback/attach 传图。
+//   **纯新增字段**,老 App 读不到它也照常工作。 2026.09.08 Naron
 import {
   RATE_MAX_20260908, BODY_MAX_BYTES_20260908,
   DESC_MAX_20260908, CONTACT_MAX_20260908, META_MAX_20260908, GH_BODY_MAX_20260908,
@@ -126,12 +128,13 @@ export const onRequestPost = async ({ request, env }) => {
       to: '(测试模式,未调 GitHub)', subject, bodyHead: desc.slice(0, 200),
       diag: header + meta, log, logLines, result: 'ok(test)', err: '', issueUrl: '', reason: testReason,
     }, keepBody);
-    return json({ ok: true, ticket: { id: ticketId, token, createdAt: nowIso, mode: 'test' } }, 200);
+    return json({ ok: true, ticket: { id: ticketId, token, createdAt: nowIso, mode: 'test', cid: 0 } }, 200);
   }
 
   // ⑤ 开工单 / 追加到这台设备已有的工单;拿不到 token 就降级排队,对用户不报错
   const ghToken = await installationToken(env, kv);
   let mode = 'queued', ticketId = '', createdAt = nowIso, issueUrl = '', ghAction = '', ghErr = '';
+  let cid = 0;                       // 这次留言落在哪条消息上(首帖 = 0),给 attach 用
 
   if (ghToken !== '') {
     let existing = 0;
@@ -144,14 +147,14 @@ export const onRequestPost = async ({ request, env }) => {
       const app = await appendUserMessage_claudecode_20260908(ghToken, existing, bodyNoLog, log, logLines);
       if (app.ok) {
         mode = 'issue'; ghAction = 'comment#' + app.n; ticketId = existing;
-        issueUrl = app.url; createdAt = app.issueCreatedAt || nowIso;
+        issueUrl = app.url; createdAt = app.issueCreatedAt || nowIso; cid = app.cid || 0;
       } else { ghErr = 'append status=' + app.status + ' ' + app.err; }
     }
     if (mode !== 'issue') {
       await ensureLabel(ghToken);
       const res = await gh(ghToken, 'POST', `/repos/${REPO}/issues`, { title, body: issueBody, labels: [LABEL] });
       if (res.ok && res.json && res.json.number) {
-        mode = 'issue'; ghAction = 'new'; ticketId = res.json.number;
+        mode = 'issue'; ghAction = 'new'; ticketId = res.json.number; cid = 0;
         issueUrl = res.json.html_url || ''; createdAt = res.json.created_at || nowIso;
         if (deviceId !== '' && kv) { try { await kv.put('ticket:' + deviceId, String(ticketId)); } catch (e) {} }
       } else { ghErr = (ghErr ? ghErr + ' | ' : '') + 'create status=' + res.status + ' ' + res.err; }
@@ -180,7 +183,7 @@ export const onRequestPost = async ({ request, env }) => {
     err: ghErr, issueUrl, reason: '',
   }, keepBody);
 
-  return json({ ok: true, ticket: { id: ticketId, token, createdAt, mode } }, 200);
+  return json({ ok: true, ticket: { id: ticketId, token, createdAt, mode, cid } }, 200);
 };
 
 /**
@@ -195,12 +198,13 @@ async function searchDeviceIssue_claudecode_20260908(token, deviceId) {
   return parseInt(res.json.items[0].number, 10) || 0;
 }
 
-/** 往这台设备已有的 issue 追加 [用户消息 #n];issue 关着先 reopen。首帖算 #1。 */
+/** 往这台设备已有的 issue 追加 [用户消息 #n];issue 关着先 reopen。首帖算 #1。
+ *  cid = 新评论的 GitHub 评论 id(X123 颗粒 5:App 要拿它把图嵌到这条上)。 */
 async function appendUserMessage_claudecode_20260908(token, issueNumber, bodyNoLog, log, logLines) {
   const base = `/repos/${REPO}/issues/${issueNumber}`;
   const issue = await gh(token, 'GET', base, null);
   if (!issue.ok || !issue.json) {
-    return { ok: false, n: 0, url: '', issueCreatedAt: '', status: issue.status, err: issue.err };
+    return { ok: false, n: 0, cid: 0, url: '', issueCreatedAt: '', status: issue.status, err: issue.err };
   }
   const issueCreatedAt = issue.json.created_at || '';
   const issueUrl = issue.json.html_url || '';
@@ -216,7 +220,7 @@ async function appendUserMessage_claudecode_20260908(token, issueNumber, bodyNoL
   if (log !== '') body += '\n' + logDetails(log, logLines, GH_BODY_MAX_20260908 - [...body].length - 200);
   const res = await gh(token, 'POST', base + '/comments', { body });
   if (!res.ok || !res.json || !res.json.id) {
-    return { ok: false, n, url: issueUrl, issueCreatedAt, status: res.status, err: res.err };
+    return { ok: false, n, cid: 0, url: issueUrl, issueCreatedAt, status: res.status, err: res.err };
   }
-  return { ok: true, n, url: res.json.html_url || issueUrl, issueCreatedAt, status: res.status, err: '' };
+  return { ok: true, n, cid: res.json.id, url: res.json.html_url || issueUrl, issueCreatedAt, status: res.status, err: '' };
 }

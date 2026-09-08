@@ -11,7 +11,17 @@ compatibility_date = "2026-09-07"
 binding = "LEGAL_CONTENT"
 id = "c1f1ad2b441b4d2ba0fb896e375c2621"
 
+# 工单图片桶(X123 颗粒 5)。私有桶,不开公共访问;读取一律经 /api/feedback/img/<key>。
+# 桶名不是机密。 2026.09.08 Naron
+[[r2_buckets]]
+binding = "FEEDBACK_IMG"
+bucket_name = "xiaotiantian-feedback"
+
 [env.preview]
 [[env.preview.kv_namespaces]]
 binding = "LEGAL_CONTENT"
 id = "c1f1ad2b441b4d2ba0fb896e375c2621"
+
+[[env.preview.r2_buckets]]
+binding = "FEEDBACK_IMG"
+bucket_name = "xiaotiantian-feedback"
