@@ -1,6 +1,8 @@
 // 在 WKWebView 里跑一段 JS 并打印结果 —— 用来量「浏览器里实际发生了什么」(字体有没有加载、
 // 元素高度、computedStyle),而不是靠看截图猜。X122 颗粒 6 定位「改一个词行间距全变」用。
-// 用法:probe <url-or-file> <js-file> [waitSeconds]
+// 用法:probe <url-or-file> <js-file> [waitSeconds] [cache|nocache]
+//   cache   = 用浏览器默认缓存策略(**复现 owner 看到的旧页**)
+//   nocache = 强制回源(默认)
 // 2026.09.08 Naron
 import Cocoa
 import WebKit
@@ -8,6 +10,7 @@ import WebKit
 let args = CommandLine.arguments
 guard args.count >= 3 else { fputs("usage: probe <url> <js-file> [wait]\n", stderr); exit(2) }
 let wait = args.count > 3 ? Double(args[3]) ?? 6.0 : 6.0
+let useCache = args.count > 4 && args[4] == "cache"
 let js = (try? String(contentsOfFile: args[2], encoding: .utf8)) ?? ""
 
 let app = NSApplication.shared
@@ -33,7 +36,7 @@ web.navigationDelegate = nav
 let raw = args[1]
 if raw.hasPrefix("http") {
     var req = URLRequest(url: URL(string: raw)!)
-    req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData     // 别拿本地 URLCache 的旧页糊弄我
+    if !useCache { req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData }   // 默认别拿本地 URLCache 的旧页糊弄我
     web.load(req)
 } else { let u = URL(fileURLWithPath: raw); web.loadFileURL(u, allowingReadAccessTo: u.deletingLastPathComponent()) }
 
