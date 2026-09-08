@@ -4,10 +4,16 @@
 # 铁律:**原版 HTML 一字节不改**,只施加 PREREG-X122-G4.md §2 登记过的三处改动:
 #   A1 删页脚版权行(owner 规则 2:去掉「回到主页」类导航与底栏)
 #   A2 <script src="https://cdn.tailwindcss.com"> ⇒ 换成**该 CDN 在这一页上实际生成的那份 CSS**
-#      (tools/dumpcss 从真实 WebKit 抓的,不是手写近似),内联成第二个 <style>。
-#      位置刻意放在原版自己那个 <style> **之后** —— 因为浏览器里 Play CDN 就是把样式追加到
-#      head 末尾的,先后顺序决定同优先级规则谁赢(preflight 会盖掉原版的 p/ul/h1 元素级样式)。
-#      放错位置 = 长相就变了。阴性对照见回执 G4-PIXEL。
+#      (tools/dumpcss 从真实 WebKit 抓的,不是手写近似),内联成一个 <style>,
+#      **放在原版自己那个 <style> 之前**(= 原版 <script> 标签本来待的位置)。
+#      ⚠️ 2026.09.08 X122 颗粒 8 改:本行原来写的是「放在**之后**」,理由是「Play CDN 就是追加到
+#      head 末尾的,照抄 DOM 顺序才不改长相」。这个理由本身没错 —— 但它照抄的是**原版页自己的
+#      排版 bug**:Tailwind Preflight(body{line-height:inherit} / p,h1-h6{margin:0} /
+#      h1-h6{font-size:inherit;font-weight:inherit} / ul{list-style:none;margin:0;padding:0})
+#      与原版 <style> 同为元素级选择器、优先级相同,在后面就赢 ⇒ 原版页实测行高 1.8→1.5、
+#      段距 16px→0、标题 20px/600→16px/400,从来就没按它自己的样式表长过。
+#      owner 令「参考 support 页面」(support 走 template/style.css,复位在第 ① 段、在前)
+#      ⇒ 改成复位在前,页面样式在后。测得三页排版全等,见 RECEIPT-X122-G8.md 行高表。
 #   A3 @import 的 Google Fonts URL ⇒ 改写成同源 assets/noto-sans-sc.css(零外域),
 #      **只换 URL**,@import 这个写法是原版自己的,不新增标签。
 # 每一处改动都在这里显式断言"确实改到了",改不到就报错退出,防止静默漏改。
@@ -39,15 +45,18 @@ def adopt(raw: str, styles_dump: str) -> tuple[str, list[str]]:
     assert 'tailwindcss v3' in tw, 'A2:style[1] 不是 Tailwind 生成的'
     assert '<' not in tw, 'A2:Tailwind CSS 里出现了 "<",会被正文白名单转义'
     assert 'url(http' not in tw and '@import' not in tw, 'A2:Tailwind CSS 里有外域引用'
-    anchor = '    </style>\n'
-    assert html.count(anchor) == 1, 'A2:原版 <style> 结束标记不唯一'
-    inline = (anchor
-              + '    <!-- 下面这段 = cdn.tailwindcss.com(v3.4.17)在本页上实际生成的 CSS,\n'
-              + '         由 tools/dumpcss 从真实浏览器抓出后原样内联。位置必须在上面那个 <style>\n'
-              + '         之后:Play CDN 就是追加到 head 末尾的,顺序变了长相就变了。 2026.09.08 Naron -->\n'
-              + '    <style>\n' + tw + '\n    </style>\n')
-    html = html.replace(anchor, inline)
-    log.append(f'A2 Tailwind CDN script → 内联 CSS {len(tw.encode())} B(放在原版 style 之后)')
+    anchor = '    <style>\n'
+    assert html.count(anchor) == 1, 'A2:原版 <style> 开始标记不唯一'
+    inline = ('    <!-- 下面这段 = cdn.tailwindcss.com(v3.4.17)在本页上实际生成的 CSS,由 tools/dumpcss\n'
+              + '         从真实浏览器抓出后原样内联。**必须放在下面那个页面自己的 <style> 之前**:它含 Tailwind\n'
+              + '         Preflight(p/h1-h6 的 margin 清零、h1-h6 字号字重 inherit、ul list-style:none、\n'
+              + '         body line-height:inherit),与页面样式同为元素级选择器、优先级相同 ⇒ 谁在后面谁赢。\n'
+              + '         颗粒 4 照抄原版页的 DOM 顺序(Play CDN 追加到 head 末尾)把它放在了后面,于是 Preflight\n'
+              + '         反过来盖掉页面自己的排版:行高 1.8→1.5、段距 16px→0、标题 20px/600→16px/400。\n'
+              + '         X122 颗粒 8 按 owner 令(「参考 support 页面」)改回复位在前。 2026.09.08 Naron -->\n'
+              + '    <style>\n' + tw + '\n    </style>\n' + anchor)
+    html = html.replace(anchor, inline, 1)
+    log.append(f'A2 Tailwind CDN script → 内联 CSS {len(tw.encode())} B(放在原版 style **之前**)')
 
     # ── A1:删底栏(owner 规则 2)──────────────────────────────────────────
     start = html.find('    <footer')
