@@ -8,6 +8,15 @@
 //   `cid` **保留**:reply 本来就回同一个东西、App 的「有新回复红点」判据在用它,
 //   而且它与图片无关(就是一条 GitHub 评论 id)。删它是白白制造一次契约变更。
 //   **纯新增字段**,老 App 读不到它也照常工作。 2026.09.08 Naron
+// ★ X123 颗粒 7(owner 真机开了 issue #7 之后当场提的)—— **issue 排版重做**:
+//   ① 标题 = 用户原话(去换行、超 60 字加「…」),旧的「时间·机型·build·设备前 8」整条退休:
+//      owner 在 GitHub 通知列表里要一眼看见用户说了什么,那串元数据在那儿只是噪声。
+//   ② 正文第一屏 = 用户原话,引用块 + 大字号;元数据全部收进「设备与诊断信息」折叠块;
+//      日志、JWS 各自还是一个折叠块。
+//   ③ 设备号从明晃晃的 `device: xxx` 改成 HTML 注释 `<!-- device: xxx -->` 放正文首行 ——
+//      页面上看不见,GitHub 全文搜索照样命中(兜底那条 searchDeviceIssue 还靠它)。
+//   ④ 「会员档」只给一个说法(以 payment.plan 为准)、DEV 模拟档单独一行,见 memberPlanText。
+//   ★ 旧排版的 issue(#1–#7)still 要能读:回取用的 firstPostBody 两种排版都认。 2026.09.09 Naron
 import {
   RATE_MAX_20260908, BODY_MAX_BYTES_20260908,
   DESC_MAX_20260908, CONTACT_MAX_20260908, META_MAX_20260908, GH_BODY_MAX_20260908,
@@ -16,10 +25,16 @@ import {
   clientIp_claudecode_20260908 as clientIp, maskIp_claudecode_20260908 as maskIp,
   clean_claudecode_20260908 as clean, cleanDeviceId_claudecode_20260908 as cleanDeviceId,
   cleanJws_claudecode_20260908 as cleanJws, cleanLog_claudecode_20260908 as cleanLog,
-  planText_claudecode_20260908 as planText, sessionText_claudecode_20260908 as sessionText,
-  permissionText_claudecode_20260908 as permissionText, paymentText_claudecode_20260908 as paymentText,
+  sessionText_claudecode_20260908 as sessionText,
+  permissionText_claudecode_20260908 as permissionText,
+  paymentDetailText_claudecode_20260909 as paymentDetailText,
+  memberPlanText_claudecode_20260909 as memberPlanText,
   channelText_claudecode_20260908 as channelText, jwsDetails_claudecode_20260908 as jwsDetails,
   logDetails_claudecode_20260908 as logDetails,
+  titleFromDesc_claudecode_20260909 as titleFromDesc,
+  quoteDesc_claudecode_20260909 as quoteDesc,
+  deviceMark_claudecode_20260909 as deviceMark,
+  diagDetails_claudecode_20260909 as diagDetails,
   ticketToken_claudecode_20260908 as ticketToken,
   rateAllow_claudecode_20260908 as rateAllow, globalDayAllow_claudecode_20260908 as globalDayAllow,
   testModeReason_claudecode_20260908 as testModeReason, logBodyOn_claudecode_20260908 as logBodyOn,
@@ -80,32 +95,40 @@ export const onRequestPost = async ({ request, env }) => {
   const log = cleanLog(data.log);
   const logLines = log === '' ? 0 : log.split('\n').length;
 
-  // ④ 组装
+  // ④ 组装 —— X123 颗粒 7 新排版(owner 看 issue #7 后当场提的):
+  //    标题 = 用户原话;正文第一屏 = 用户原话(引用块 + 大字号);抓来的元数据全收进折叠块。
+  //    设备号改成 HTML 注释放首行:页面上看不见,GitHub 全文搜索照样命中(兜底那条路还靠它)。
   const nowIso = new Date().toISOString();
-  const title = '[反馈] ' + bj_claudecode_20260908(false) + ' · ' + (device !== '' ? device : '未知机型')
-    + ' · b' + (build !== '' ? build : '-')
-    + (deviceId !== '' ? ' · ' + deviceId.slice(0, 8) : '');
+  const title = titleFromDesc(desc, '[反馈] ' + bj_claudecode_20260908(false));
 
-  // 首行固定 device: <deviceId> —— KV 映射丢了还能靠 GitHub 搜索找回这台设备的 issue
-  const header = 'device: ' + (deviceId !== '' ? deviceId : '(未提供)') + '\n'
-    + 'channel: ' + chanText.kind + ' · verified: ' + (jws.verified ? 'yes' : 'no')
-    + ' · env: ' + (chanText.env !== '' ? chanText.env : 'unknown') + '\n'
-    + OWNER_MENTION_20260908 + ' 有新的用户反馈。\n\n';
-
-  const meta = '【联系方式】' + (contactWay !== '' ? contactWay : '(用户未填)') + '\n'
-    + '【App 版本】' + (version !== '' ? version : '-') + ' (build ' + (build !== '' ? build : '-') + ')\n'
-    + '【机型 / 系统 / 语言】' + (device !== '' ? device : '-') + ' / ' + (os !== '' ? os : '-') + ' / ' + (locale !== '' ? locale : '-') + '\n'
-    + '【会员档】' + planText(data.plan) + '\n'
-    + '【付费】' + paymentText(data.payment) + '\n'
-    + '【渠道】' + chanText.detail + '\n'
-    + '【最近一局】' + sessionText(data.lastSession) + '\n'
-    + '【权限】' + permissionText(data.permissions) + '\n'
-    + '【提交时间】' + bj_claudecode_20260908(true) + '\n'
-    + '【来源 IP】' + maskIp(ip);
+  // 「会员档」只给一个说法,以 payment.plan 为准;DEV 模拟档单独一行。理由见 memberPlanText 注释。
+  const member = memberPlanText(data.plan, data.payment, data.devOverridePlan);
+  const diagRows = [
+    ['App 版本', (version !== '' ? version : '-') + ' (build ' + (build !== '' ? build : '-') + ')'],
+    ['机型 / 系统 / 语言', (device !== '' ? device : '-') + ' / ' + (os !== '' ? os : '-') + ' / ' + (locale !== '' ? locale : '-')],
+    ['会员档', member.plan + (member.mismatch !== '' ? ' —— ⚠️ ' + member.mismatch : '')],
+  ];
+  if (member.devOverride !== '') {
+    diagRows.push(['DEV 模拟档', member.devOverride + '(开发者模式模拟的,不是真实权益)']);
+  }
+  diagRows.push(
+    ['付费', paymentDetailText(data.payment)],
+    ['渠道', chanText.detail + ' · env ' + (chanText.env !== '' ? chanText.env : 'unknown')],
+    ['最近一局', sessionText(data.lastSession)],
+    ['权限', permissionText(data.permissions)],
+    ['提交时间', bj_claudecode_20260908(true)],
+    ['来源 IP', maskIp(ip)],
+  );
+  // 发送记录页看的是纯文本版(那一页不渲染 markdown,折叠块在那儿只会变成一坨标签)
+  const diagPlain = diagRows.map((r) => r[0] + ':' + r[1]).join('\n');
 
   const folds = jws.present ? '\n' + jwsDetails(jwsRaw, jws) : '';
-  const bodyNoLog = header + '【问题描述】\n' + desc + '\n\n' + meta + '\n' + folds;
-  let issueBody = bodyNoLog;
+  // bodyCore 不含 @提及:它同时用于「新开 issue」和「追加评论」,评论里再 @ 一次是重复打扰
+  const bodyCore = quoteDesc(desc) + '\n\n'
+    + '**联系方式**:' + (contactWay !== '' ? contactWay : '(用户未填)') + '\n\n'
+    + diagDetails(diagRows) + folds;
+  const bodyNoLog = bodyCore;
+  let issueBody = deviceMark(deviceId) + '\n' + OWNER_MENTION_20260908 + '\n\n' + bodyCore;
   if (log !== '') issueBody += '\n' + logDetails(log, logLines, GH_BODY_MAX_20260908 - [...issueBody].length - 200);
 
   const keepBody = await logBodyOn(kv);
@@ -129,7 +152,7 @@ export const onRequestPost = async ({ request, env }) => {
     await sendlog(kv, {
       api: 'contact', mode: 'test', id: ticketId, deviceId8: deviceId.slice(0, 8),
       to: '(测试模式,未调 GitHub)', subject, bodyHead: desc.slice(0, 200),
-      diag: header + meta, log, logLines, result: 'ok(test)', err: '', issueUrl: '', reason: testReason,
+      diag: diagPlain, log, logLines, result: 'ok(test)', err: '', issueUrl: '', reason: testReason,
     }, keepBody);
     return json({ ok: true, ticket: { id: ticketId, token, createdAt: nowIso, mode: 'test', cid: 0 } }, 200);
   }
@@ -181,7 +204,7 @@ export const onRequestPost = async ({ request, env }) => {
   await sendlog(kv, {
     api: 'contact', mode, id: String(ticketId), deviceId8: deviceId.slice(0, 8),
     to: mode === 'issue' ? 'GitHub issue #' + ticketId : '(排队中)',
-    subject, bodyHead: desc.slice(0, 200), diag: header + meta, log, logLines,
+    subject, bodyHead: desc.slice(0, 200), diag: diagPlain, log, logLines,
     result: ghAction !== '' ? 'GitHub ' + ghAction : 'GitHub 未成功,已排队',
     err: ghErr, issueUrl, reason: '',
   }, keepBody);
@@ -192,6 +215,9 @@ export const onRequestPost = async ({ request, env }) => {
 /**
  * 兜底:KV 映射里没有时问 GitHub 搜索。搜索索引有几十秒延迟,所以只是兜底不是主路径;
  * 这个 GitHub App 只有 issues:write / metadata:read,搜索用不用得了未经证实 ⇒ 失败不算错。
+ * ★ 颗粒 7 把设备号挪进了 HTML 注释。GitHub 全文检索索引的是 issue 正文**原文**,
+ *   注释里的字照样能搜到 —— 但这是"应该"不是"证明",本轮实测见回执 G7-SEARCH-COMMENT;
+ *   即使它失效,主路径(KV `ticket:<deviceId>`)也不受影响。
  */
 async function searchDeviceIssue_claudecode_20260908(token, deviceId) {
   const q = `repo:${REPO} label:${LABEL} "${deviceId}"`;
@@ -202,7 +228,9 @@ async function searchDeviceIssue_claudecode_20260908(token, deviceId) {
 }
 
 /** 往这台设备已有的 issue 追加 [用户消息 #n];issue 关着先 reopen。首帖算 #1。
- *  cid = 新评论的 GitHub 评论 id(App 的「有新回复红点」判据用它)。 */
+ *  cid = 新评论的 GitHub 评论 id(App 的「有新回复红点」判据用它)。
+ *  ★ 颗粒 7:传进来的 `bodyNoLog` 已经是新排版的 bodyCore(原话引用块在前、诊断折叠在后),
+ *    且**不含 @提及** —— 评论本身就会通知 owner,再 @ 一次是重复打扰。 */
 async function appendUserMessage_claudecode_20260908(token, issueNumber, bodyNoLog, log, logLines) {
   const base = `/repos/${REPO}/issues/${issueNumber}`;
   const issue = await gh(token, 'GET', base, null);

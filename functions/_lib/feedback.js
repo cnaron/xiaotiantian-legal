@@ -24,6 +24,18 @@ export const USER_MSG_PREFIX_20260908 = '[用户消息 #';
 export const SENDLOG_KEEP_SEC_20260908 = 30 * 24 * 3600;
 export const OWNER_MENTION_20260908 = '@cnaron';
 
+// ── X123 颗粒 7:issue 排版重做(owner 真机试用 issue #7 后当场提的)────────────
+// 旧排版把「时间·机型·build·设备前 8」当标题、用户原话埋在第 5 行的【问题描述】里,
+// owner 在 GitHub 通知列表上**看不到用户到底说了什么**。新排版:标题 = 用户原话,
+// 正文第一屏 = 用户原话(引用块 + 大字号),所有抓来的元数据收进折叠块。
+export const TITLE_MAX_20260909 = 60;                 // 标题取原话前 60 字,超了加「…」
+export const DESC_MARK_BEGIN_20260909 = '<!-- rc:desc:begin -->';
+export const DESC_MARK_END_20260909 = '<!-- rc:desc:end -->';
+export const DESC_QUOTE_PREFIX_20260909 = '> ';       // 每行都加
+export const DESC_HEAD_PREFIX_20260909 = '### ';      // 只加在第一行(渲染成大字号)
+export const DEVICE_MARK_PREFIX_20260909 = '<!-- device: ';
+export const DEVICE_MARK_SUFFIX_20260909 = ' -->';
+
 const enc = new TextEncoder();
 
 export const NO_STORE_20260908 = {
@@ -138,15 +150,57 @@ export function permissionText_claudecode_20260908(p) {
   }).join(' / ');
 }
 
-export function paymentText_claudecode_20260908(p) {
+/**
+ * 付费明细。**不再带「档 …」** —— X123 颗粒 7 起「会员档」是独立一行,由
+ * `memberPlanText_claudecode_20260909` 统一裁决,这里再写一遍就是第二个说法。
+ */
+export function paymentDetailText_claudecode_20260909(p) {
   if (!p || typeof p !== 'object' || Array.isArray(p)) return '-';
-  const parts = ['档 ' + planText_claudecode_20260908(p.plan)];
+  const parts = [];
   const fields = { productId: '商品', purchaseDate: '购买', expiresAt: '到期', originalTransactionId: '原始交易号' };
   for (const k of Object.keys(fields)) {
     const v = clean_claudecode_20260908(p[k], META_MAX_20260908, true);
     parts.push(fields[k] + ' ' + (v !== '' ? v : '-'));
   }
   return parts.join(' · ');
+}
+
+/**
+ * 「会员档」到底显示哪个 —— issue #7 里同一张工单上「会员档 forever」和「付费 档 free」
+ * 打架,owner 当场要求服务端只给**一个**说法。
+ *
+ * ## 根因(已在 App 侧查实,不是服务端取错字段)
+ * 那台设备开着开发者模式、**模拟了 Pro**。App 里两个字段来源本来就不同:
+ *   · 顶层 `plan`      ← 屏上显示用的会员状态,**会被 DEV override 顶掉** ⇒ 假的 `forever`
+ *   · `payment.plan`   ← 只在「真扫苹果交易记录」那条路里写;有 override 时那条路
+ *                        提前 return 了 ⇒ 停在初值 `free`(真的,但含义是"从没扫过")
+ * 见 App `SubscriptionManager.swift` 的 `scanRealEntitlement_claudecode_20260909` 注释。
+ *
+ * ## 本函数的规矩(owner 令)
+ *   1. 「会员档」**以 `payment.plan` 为准**(那是真实权益的口径)。
+ *   2. App 带了 `devOverridePlan` ⇒ 折叠块里**单独一行**「DEV 模拟档」,不混进会员档。
+ *   3. 老版本 App 不发 `devOverridePlan`,但顶层 `plan` 与 `payment.plan` 不一致时
+ *      仍然把差异**登记**在会员档那一行后面 —— 不假装两个数一样。
+ *
+ * @returns {{plan:string, devOverride:string, mismatch:string}}
+ */
+export function memberPlanText_claudecode_20260909(topPlan, payment, devOverridePlan) {
+  const payPlan = (payment && typeof payment === 'object' && !Array.isArray(payment)) ? payment.plan : undefined;
+  const hasPay = payPlan !== undefined && payPlan !== null && typeof payPlan !== 'object';
+  const plan = planText_claudecode_20260908(hasPay ? payPlan : topPlan);
+
+  const devRaw = (devOverridePlan === null || devOverridePlan === undefined || typeof devOverridePlan === 'object')
+    ? '' : String(devOverridePlan);
+  const devOverride = devRaw === '' ? '' : planText_claudecode_20260908(devRaw);
+
+  // 登记差异:只在「老 App 没告诉我们它开了 override」时才需要提醒
+  let mismatch = '';
+  const topRaw = (topPlan === null || topPlan === undefined || typeof topPlan === 'object') ? '' : String(topPlan);
+  if (devRaw === '' && hasPay && topRaw !== '' && topRaw !== String(payPlan)) {
+    mismatch = 'App 上报的顶层 plan=' + planText_claudecode_20260908(topRaw)
+      + ' 与 payment.plan 不一致,已按 payment.plan 取(常见成因:设备开了 DEV 模拟档)';
+  }
+  return { plan, devOverride, mismatch };
 }
 
 export function channelText_claudecode_20260908(chan, jws) {
@@ -183,8 +237,90 @@ export function logDetails_claudecode_20260908(log, lines, budget) {
   return '<details><summary>App 日志(' + lines + ' 行)</summary>\n\n```\n' + body + '\n```\n\n</details>\n';
 }
 
-/** 从 issue 正文里取出用户那段描述(取不到就整篇返回) */
+// ── X123 颗粒 7 排版件 ────────────────────────────────────────────────
+/**
+ * 标题 = 用户原话。换行折成空格(GitHub 标题是单行),超过 60 字截断加「…」。
+ * 空串进来回一个兜底串 —— GitHub 不收空标题,而 `desc` 理论上已被上游挡住,这里只是不让它炸。
+ */
+export function titleFromDesc_claudecode_20260909(desc, fallback) {
+  const one = String(desc ?? '').replace(/\s+/g, ' ').trim();
+  if (one === '') return String(fallback ?? '(用户未填写描述)');
+  const chars = [...one];
+  return chars.length <= TITLE_MAX_20260909 ? one : chars.slice(0, TITLE_MAX_20260909).join('') + '…';
+}
+
+/**
+ * 把用户原话包成「机器认得出 + 人看着醒目」的一段:
+ *
+ *     <!-- rc:desc:begin -->
+ *     > ### 第一行
+ *     > 第二行
+ *     <!-- rc:desc:end -->
+ *
+ * · 两个 HTML 注释是**给机器用的锚点**(GitHub 页面上不显示),`unquoteDesc` 靠它精确回取
+ *   —— 比旧版靠中文字面量【问题描述】+「下一个【」扫描稳得多。
+ * · 每行都加 `> `(引用块),第一行**额外**加 `### `(渲染成大字号,owner 要的"原话要显眼")。
+ * · 空行输出成裸 `>`(带尾空格的 `> ` 会被某些 markdown 工具 trim 掉,回取时两种都认)。
+ * · ★ 与 `unquoteDesc_claudecode_20260909` 是**严格互逆**的一对:第一行永远只加一个
+ *   `### `,所以用户原文即使自己就以 `### ` 或 `> ` 开头,回取也一字不差。单测钉死了这条。
+ */
+export function quoteDesc_claudecode_20260909(desc) {
+  const lines = String(desc ?? '').split('\n');
+  const body = lines.map((ln, i) => {
+    const withHead = i === 0 ? DESC_HEAD_PREFIX_20260909 + ln : ln;
+    return withHead === '' ? '>' : DESC_QUOTE_PREFIX_20260909 + withHead;
+  }).join('\n');
+  return DESC_MARK_BEGIN_20260909 + '\n' + body + '\n' + DESC_MARK_END_20260909;
+}
+
+/**
+ * `quoteDesc` 的逆。整篇正文丢进来,取出用户原话;找不到锚点回 `null`
+ * (调用方据此回落到旧排版的取法)。
+ */
+export function unquoteDesc_claudecode_20260909(body) {
+  const s = String(body ?? '');
+  const a = s.indexOf(DESC_MARK_BEGIN_20260909);
+  if (a < 0) return null;
+  const from = a + DESC_MARK_BEGIN_20260909.length;
+  const b = s.indexOf(DESC_MARK_END_20260909, from);
+  if (b < 0) return null;
+  const inner = s.slice(from, b).replace(/^\n/, '').replace(/\n$/, '');
+  const lines = inner.split('\n').map((ln) => (
+    ln.startsWith(DESC_QUOTE_PREFIX_20260909) ? ln.slice(DESC_QUOTE_PREFIX_20260909.length)
+      : (ln === '>' ? '' : ln)
+  ));
+  if (lines.length > 0 && lines[0].startsWith(DESC_HEAD_PREFIX_20260909)) {
+    lines[0] = lines[0].slice(DESC_HEAD_PREFIX_20260909.length);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * 设备号锚点。**HTML 注释**形式:页面上看不见,但 GitHub 全文搜索照样能搜到
+ * (`searchDeviceIssue` 那条兜底路径靠它)。旧排版是明晃晃一行 `device: xxx`,
+ * owner 说那行对他没用还占地方。
+ */
+export function deviceMark_claudecode_20260909(deviceId) {
+  const v = String(deviceId ?? '');
+  return DEVICE_MARK_PREFIX_20260909 + (v !== '' ? v : '(未提供)') + DEVICE_MARK_SUFFIX_20260909;
+}
+
+/** 抓来的元数据 → 一个折叠块。`rows` = [[名字, 值], …],值为空串的行照样留(缺什么一眼看得出) */
+export function diagDetails_claudecode_20260909(rows, summary) {
+  const body = rows.map(([k, v]) => '- **' + k + '**:' + (v !== '' && v !== undefined && v !== null ? v : '-')).join('\n');
+  return '<details><summary>' + (summary || '设备与诊断信息') + '</summary>\n\n' + body + '\n\n</details>\n';
+}
+
+/**
+ * 从 issue 正文里取出用户那段描述。
+ * ★ 两种排版都要认(X123 颗粒 7 改版,但 #1–#7 是旧排版,thread 还要读它们):
+ *   ① 新:`<!-- rc:desc:begin -->` … `<!-- rc:desc:end -->` 之间,去掉引用/大字号前缀;
+ *   ② 旧:【问题描述】起、到下一个「\n【」止。
+ * 两条路都取不到 ⇒ 整篇返回(宁可多给,不给空气泡)。
+ */
 export function firstPostBody_claudecode_20260908(body) {
+  const marked = unquoteDesc_claudecode_20260909(body);
+  if (marked !== null) return marked;
   const head = '【问题描述】';
   const s = String(body ?? '');
   const pos = s.indexOf(head);
