@@ -20,6 +20,17 @@ export const JWS_MAX_BYTES_20260908 = 32768;
 export const DEVICE_ID_MAX_20260908 = 64;
 export const GH_BODY_MAX_20260908 = 60000;
 export const USER_REPLY_PREFIX_20260908 = '[用户回复]';
+/**
+ * 追加消息的前缀。
+ * ★ X123 颗粒 7 去掉了井号:旧写法 `[用户消息 #2]` 里的 `#2` 会被 GitHub **自动链成
+ *   「引用 issue #2」** —— 每追加一次,就在编号恰好撞上的那条老工单下面留一条交叉引用,
+ *   等于拿别人的工单当留言板(截图上一眼就看到 `#2` 是蓝色链接)。
+ * ★ 新前缀是旧前缀的**真前缀**(旧的 = 新的 + `#`),所以 `startsWith(新)` 对
+ *   **老评论也成立** —— 分类和计数一行都不用写兼容分支。旧常量保留只为文档,不再用于生成。
+ * 2026.09.09 Naron
+ */
+export const USER_MSG_PREFIX_20260909 = '[用户消息 ';
+/** @deprecated 旧生成格式(带井号),只用于说明;匹配一律用 USER_MSG_PREFIX_20260909 */
 export const USER_MSG_PREFIX_20260908 = '[用户消息 #';
 export const SENDLOG_KEEP_SEC_20260908 = 30 * 24 * 3600;
 export const OWNER_MENTION_20260908 = '@cnaron';
@@ -359,7 +370,8 @@ export function classifyComment_claudecode_20260908(body) {
   if (s.startsWith(USER_REPLY_PREFIX_20260908)) {
     return { from: 'user', body: s.slice(USER_REPLY_PREFIX_20260908.length).replace(/^\s+/, '') };
   }
-  if (s.startsWith(USER_MSG_PREFIX_20260908)) {
+  // 新前缀是旧前缀的真前缀 ⇒ 这一行同时认 `[用户消息 2]`(新)和 `[用户消息 #2]`(旧)
+  if (s.startsWith(USER_MSG_PREFIX_20260909)) {
     return { from: 'user', body: firstPostBody_claudecode_20260908(s) };
   }
   return { from: 'dev', body: s };

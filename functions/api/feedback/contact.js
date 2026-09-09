@@ -20,7 +20,7 @@
 import {
   RATE_MAX_20260908, BODY_MAX_BYTES_20260908,
   DESC_MAX_20260908, CONTACT_MAX_20260908, META_MAX_20260908, GH_BODY_MAX_20260908,
-  USER_MSG_PREFIX_20260908, OWNER_MENTION_20260908,
+  USER_MSG_PREFIX_20260909, OWNER_MENTION_20260908,
   json_claudecode_20260908 as json, timingSafeEqual_claudecode_20260908 as tseq,
   clientIp_claudecode_20260908 as clientIp, maskIp_claudecode_20260908 as maskIp,
   clean_claudecode_20260908 as clean, cleanDeviceId_claudecode_20260908 as cleanDeviceId,
@@ -244,10 +244,10 @@ async function appendUserMessage_claudecode_20260908(token, issueNumber, bodyNoL
   let n = 2;
   const cmt = await gh(token, 'GET', base + '/comments?per_page=100', null);
   if (cmt.ok && Array.isArray(cmt.json)) {
-    n = cmt.json.filter((c) => c && typeof c.body === 'string' && c.body.startsWith(USER_MSG_PREFIX_20260908)).length + 2;
+    n = cmt.json.filter((c) => c && typeof c.body === 'string' && c.body.startsWith(USER_MSG_PREFIX_20260909)).length + 2;
   }
 
-  let body = USER_MSG_PREFIX_20260908 + n + ']\n\n' + bodyNoLog;
+  let body = USER_MSG_PREFIX_20260909 + n + ']\n\n' + bodyNoLog;
   if (log !== '') body += '\n' + logDetails(log, logLines, GH_BODY_MAX_20260908 - [...body].length - 200);
   const res = await gh(token, 'POST', base + '/comments', { body });
   if (!res.ok || !res.json || !res.json.id) {
