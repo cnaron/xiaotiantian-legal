@@ -51,7 +51,8 @@ function modRow_claudecode_20260909(r) {
   const src = r.modSrc === 'word' ? '关键词库' : (r.modSrc === 'ai' ? 'Workers AI' : '(未命中)');
   const cat = r.modCat ? h_claudecode_20260908(r.modCat + ' ' + catName_claudecode_20260909(r.modCat)) : '-';
   const ai = r.aiState === 'unavailable' ? `<b>ai_unavailable</b> —— ${h_claudecode_20260908(r.aiReason || '')}`
-    : (r.aiState === 'skipped' ? '未调用(词表已拦下)' : 'ok');
+    : (r.aiState === 'skipped' ? '未调用(词表已拦下)'
+      : (r.aiState === 'flaky' ? `<b>模型抖动,已放行</b> —— ${h_claudecode_20260908(r.aiReason || '')}` : 'ok'));
   return `<dt>审核</dt><dd>来源 ${h_claudecode_20260908(src)} · 类别 ${cat}
     · 命中 ${h_claudecode_20260908(r.modDetail || '-')}<br>
     AI ${ai} · 词表 ${h_claudecode_20260908(r.modMs ?? '-')} ms · AI ${h_claudecode_20260908(r.aiMs ?? '-')} ms</dd>`;

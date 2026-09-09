@@ -20,6 +20,21 @@ export const AUTO_BLOCK_COMMENT_20260909 = '[系统] 因多次提交违规内容
 
 export const AI_MODEL_20260909 = '@cf/meta/llama-guard-3-8b';
 export const AI_TIMEOUT_MS_20260909 = 3000;
+/**
+ * ★★★ 采样温度钉成 0 + 判「不安全」时**再问一次**,两条都是实测逼出来的:
+ *   2026-09-09 10:57,线上把「解封探测 11」「解封探测 12」(我自己的解封轮询文案,
+ *   完全无辜)判成 **S9 无差别武器** 并拒掉;同样两句话十几分钟后再问,**5/5 判 safe**,
+ *   另一句同族的「解封探测 5」**8/8 判 safe**。⇒ 同一输入不同判,是采样随机性。
+ *
+ *   一个会随机误伤的门 + 「拒绝时不给理由」的产品决定 = 用户被拦了还不知道为什么、
+ *   重试一次可能又好了。所以:
+ *     ① `temperature: 0` 把随机性摁到最小;
+ *     ② 判不安全**不当场定罪**,再问一次,**两次都说不安全才拒**。
+ *   代价只落在"被判不安全"那一小撮请求上(正常流量一次都不多花),
+ *   而正常流量本来就是绝大多数 ⇒ neurons 账基本不变。
+ */
+export const AI_TEMPERATURE_20260909 = 0;
+export const AI_CONFIRM_UNSAFE_20260909 = true;
 
 /**
  * ★ 本轮的「阈值」就是这两张表 —— Llama Guard 不给分数,它给类别,所以「阈值」= 哪些类别算拒。
@@ -113,7 +128,10 @@ export async function moderateAI_claudecode_20260909(ai, text) {
   try {
     // 3 秒还没回来就当它不可用。Promise.race 不会取消那个请求,但我们不再等它。
     raw = await Promise.race([
-      ai.run(AI_MODEL_20260909, { messages: [{ role: 'user', content: String(text) }] }),
+      ai.run(AI_MODEL_20260909, {
+        messages: [{ role: 'user', content: String(text) }],
+        temperature: AI_TEMPERATURE_20260909,
+      }),
       new Promise((resolve) => setTimeout(() => resolve({ __timeout: true }), AI_TIMEOUT_MS_20260909)),
     ]);
   } catch (e) {
@@ -185,6 +203,31 @@ export async function moderate_claudecode_20260909(ai, text) {
     return { ok: true, src: '', cat: '', detail: '', aiState: 'unavailable', aiReason: a.reason, wordMs, aiMs: a.ms };
   }
   if (a.unsafe) {
+    // ★ 复核:判不安全不当场定罪,再问一次(理由见 AI_TEMPERATURE_20260909 的注释)
+    if (AI_CONFIRM_UNSAFE_20260909) {
+      const b = await moderateAI_claudecode_20260909(ai, text);
+      if (b.unavailable) {
+        // 复核那一次坏了 ⇒ 放行。宁可漏,不可在"证据只有一次且已知会抖"的情况下定罪。
+        return {
+          ok: true, src: '', cat: '', detail: '', aiState: 'unavailable',
+          aiReason: '首判不安全(' + (a.hitCats || []).join('+') + ')但复核不可用:' + b.reason,
+          wordMs, aiMs: a.ms + b.ms,
+        };
+      }
+      if (!b.unsafe) {
+        return {
+          ok: true, src: '', cat: '', detail: '', aiState: 'flaky',
+          aiReason: '首判 ' + (a.hitCats || []).join('+') + ' / 复核判安全 ⇒ 放行(模型抖动)',
+          wordMs, aiMs: a.ms + b.ms,
+        };
+      }
+      return {
+        ok: false, src: 'ai', cat: (b.hitCats || []).join('+'),
+        detail: 'AI 两次都判 ' + (b.hitCats || []).map((c) => c + ' ' + categoryName_claudecode_20260909(c)).join(' / ')
+          + '(首判 ' + (a.hitCats || []).join('+') + ')',
+        aiState: 'ok', aiReason: '', wordMs, aiMs: a.ms + b.ms,
+      };
+    }
     return {
       ok: false, src: 'ai', cat: (a.hitCats || []).join('+'),
       detail: 'AI 判定 ' + (a.hitCats || []).map((c) => c + ' ' + categoryName_claudecode_20260909(c)).join(' / '),
