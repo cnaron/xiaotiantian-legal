@@ -42,6 +42,13 @@ import {
 } from '../../_lib/feedback.js';
 import { jwsInspect_claudecode_20260908 as jwsInspect } from '../../_lib/applejws.js';
 import {
+  isBlocked_claudecode_20260909 as isBlocked,
+  deviceIssue_claudecode_20260909 as deviceIssue,
+  moderate_claudecode_20260909 as moderate,
+  noteRejection_claudecode_20260909 as noteRejection,
+  categoryName_claudecode_20260909 as categoryName,
+} from '../../_lib/moderation.js';
+import {
   GH_REPO_20260908 as REPO, GH_LABEL_20260908 as LABEL,
   installationToken_claudecode_20260908 as installationToken,
   gh_claudecode_20260908 as gh, ensureLabel_claudecode_20260908 as ensureLabel,
@@ -95,6 +102,40 @@ export const onRequestPost = async ({ request, env }) => {
   const log = cleanLog(data.log);
   const logLines = log === '' ? 0 : log.split('\n').length;
 
+  // ③-拉黑 —— owner 在 GitHub 上贴 `blocked` 标签 ⇒ 这台设备发不出新的话。
+  //   ★ 放在预审**之前**:被拉黑的人不该再消耗一次 AI 额度。
+  //   ★ thread 那条**故意不查**:拉黑的是"发言",不是"看自己的历史"。
+  const keepBodyEarly = await logBodyOn(kv);
+  const myIssue = await deviceIssue(kv, deviceId);
+  const ghTokenForGate = myIssue > 0 ? await installationToken(env, kv) : '';
+  const blk = await isBlocked(kv, ghTokenForGate, { deviceId, issue: myIssue });
+  if (blk.blocked) {
+    await sendlog(kv, {
+      api: 'contact', mode: 'blocked', id: myIssue > 0 ? String(myIssue) : '-', deviceId8: deviceId.slice(0, 8),
+      to: '(已拉黑,未开工单)', subject: '被拉黑的设备提交反馈', bodyHead: desc.slice(0, 200),
+      diag: '', log: '', logLines: 0, result: '拒收', err: '', issueUrl: '', reason: blk.why,
+    }, keepBodyEarly);
+    return json({ ok: false, err: 'blocked' }, 403);
+  }
+
+  // ③-预审 —— 只审用户自己写的那段话(不审日志、不审元信息:那些是我们自己拼的)
+  const mod = await moderate(env.AI, desc);
+  if (!mod.ok) {
+    // ghTokenForGate 只在 myIssue>0 时才非空;myIssue==0 时 noteRejection 只写 KV,不需要 token
+    const note = await noteRejection(kv, ghTokenForGate, { deviceId, issue: myIssue });
+    await sendlog(kv, {
+      api: 'contact', mode: 'rejected', id: myIssue > 0 ? String(myIssue) : '-', deviceId8: deviceId.slice(0, 8),
+      to: '(预审拒绝,未开工单)', subject: '预审拒绝 · ' + categoryName(mod.cat),
+      bodyHead: desc.slice(0, 200), diag: '', log: '', logLines: 0,
+      result: '第 ' + note.count + ' 次被拒' + (note.autoBlocked ? ' ⇒ 已自动拉黑(' + note.how + ')' : ''),
+      err: '', issueUrl: '', reason: '来源 ' + mod.src + ' · 类别 ' + mod.cat + ' · ' + mod.detail,
+      modSrc: mod.src, modCat: mod.cat, modDetail: mod.detail,
+      modMs: mod.wordMs, aiMs: mod.aiMs, aiState: mod.aiState, aiReason: mod.aiReason,
+    }, keepBodyEarly);
+    // 不给理由:告诉对方"哪个词被拦了"等于送他一张绕过说明书
+    return json({ ok: false, err: 'rejected' }, 400);
+  }
+
   // ④ 组装 —— X123 颗粒 7 新排版(owner 看 issue #7 后当场提的):
   //    标题 = 用户原话;正文第一屏 = 用户原话(引用块 + 大字号);抓来的元数据全收进折叠块。
   //    设备号改成 HTML 注释放首行:页面上看不见,GitHub 全文搜索照样命中(兜底那条路还靠它)。
@@ -131,7 +172,7 @@ export const onRequestPost = async ({ request, env }) => {
   let issueBody = deviceMark(deviceId) + '\n' + OWNER_MENTION_20260908 + '\n\n' + bodyCore;
   if (log !== '') issueBody += '\n' + logDetails(log, logLines, GH_BODY_MAX_20260908 - [...issueBody].length - 200);
 
-  const keepBody = await logBodyOn(kv);
+  const keepBody = keepBodyEarly;
   const subject = '[' + (appName !== '' ? appName : '小天天练跳绳') + '] 用户反馈 · '
     + (build !== '' ? build : '-') + ' · ' + bj_claudecode_20260908(true);
 
@@ -153,20 +194,19 @@ export const onRequestPost = async ({ request, env }) => {
       api: 'contact', mode: 'test', id: ticketId, deviceId8: deviceId.slice(0, 8),
       to: '(测试模式,未调 GitHub)', subject, bodyHead: desc.slice(0, 200),
       diag: diagPlain, log, logLines, result: 'ok(test)', err: '', issueUrl: '', reason: testReason,
+      modSrc: '', modCat: '', modDetail: '', modMs: mod.wordMs, aiMs: mod.aiMs,
+      aiState: mod.aiState, aiReason: mod.aiReason,
     }, keepBody);
     return json({ ok: true, ticket: { id: ticketId, token, createdAt: nowIso, mode: 'test', cid: 0 } }, 200);
   }
 
   // ⑤ 开工单 / 追加到这台设备已有的工单;拿不到 token 就降级排队,对用户不报错
-  const ghToken = await installationToken(env, kv);
+  const ghToken = ghTokenForGate !== '' ? ghTokenForGate : await installationToken(env, kv);
   let mode = 'queued', ticketId = '', createdAt = nowIso, issueUrl = '', ghAction = '', ghErr = '';
   let cid = 0;                       // 这次留言落在哪条消息上(首帖 = 0)
 
   if (ghToken !== '') {
-    let existing = 0;
-    if (deviceId !== '' && kv) {
-      try { existing = parseInt((await kv.get('ticket:' + deviceId)) || '0', 10) || 0; } catch (e) { existing = 0; }
-    }
+    let existing = myIssue;                      // 拉黑那道门已经查过 KV 映射,不重复读
     if (existing === 0 && deviceId !== '') existing = await searchDeviceIssue_claudecode_20260908(ghToken, deviceId);
 
     if (existing > 0) {
@@ -207,6 +247,8 @@ export const onRequestPost = async ({ request, env }) => {
     subject, bodyHead: desc.slice(0, 200), diag: diagPlain, log, logLines,
     result: ghAction !== '' ? 'GitHub ' + ghAction : 'GitHub 未成功,已排队',
     err: ghErr, issueUrl, reason: '',
+    modSrc: '', modCat: '', modDetail: '', modMs: mod.wordMs, aiMs: mod.aiMs,
+    aiState: mod.aiState, aiReason: mod.aiReason,
   }, keepBody);
 
   return json({ ok: true, ticket: { id: ticketId, token, createdAt, mode, cid } }, 200);

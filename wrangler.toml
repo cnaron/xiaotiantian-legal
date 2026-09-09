@@ -13,6 +13,13 @@ compatibility_date = "2026-09-07"
 binding = "LEGAL_CONTENT"
 id = "c1f1ad2b441b4d2ba0fb896e375c2621"
 
+# X123 颗粒 7:预审第二道门用 Workers AI(@cf/meta/llama-guard-3-8b)。
+# ★ preview 环境**故意不加这个绑定** —— 那是 G7-AI-NOBIND 那条闸的被测对象:
+#   「AI 真的不在」时正常反馈必须照样过得去(放行 + 记 ai_unavailable)。
+#   用一个假开关模拟"不可用"证明不了这件事,只有真的没有绑定才算数。 2026.09.09 Naron
+[ai]
+binding = "AI"
+
 [env.preview]
 [[env.preview.kv_namespaces]]
 binding = "LEGAL_CONTENT"

@@ -18,6 +18,12 @@ import {
   gh_claudecode_20260908 as gh,
 } from '../../_lib/ghapp.js';
 import { resolveTicket_claudecode_20260908 as resolveTicket } from '../../_lib/ticket.js';
+import {
+  isBlocked_claudecode_20260909 as isBlocked,
+  moderate_claudecode_20260909 as moderate,
+  noteRejection_claudecode_20260909 as noteRejection,
+  categoryName_claudecode_20260909 as categoryName,
+} from '../../_lib/moderation.js';
 
 export const onRequestPost = async ({ request, env }) => {
   const kv = env.LEGAL_CONTENT || null;
@@ -53,6 +59,35 @@ export const onRequestPost = async ({ request, env }) => {
   }
   const keepBody = await logBodyOn(kv);
 
+  // ── X123 颗粒 7 两道门 ────────────────────────────────────────────────
+  // ★ 放在 token 校验**之后**:不然拿着 X-RC-Key 的人可以用「403 blocked / 404」
+  //   的差别去探测「哪条工单被拉黑了」。先证明你是这张票的主人,再谈拦不拦你。
+  // ★ reply 的请求体里没有 deviceId(契约是颗粒 2 定的,这轮不改)⇒ 主体按工单号算。
+  const issueNo = /^[0-9]+$/.test(id) ? parseInt(id, 10) : 0;
+  const blk = await isBlocked(kv, ghToken, { issue: issueNo });
+  if (blk.blocked) {
+    await sendlog(kv, {
+      api: 'reply', mode: 'blocked', id, deviceId8: '', to: '(已拉黑,未写入)',
+      subject: '被拉黑的工单追加回复', bodyHead: body.slice(0, 200), diag: '', log: '', logLines: 0,
+      result: '拒收', err: '', issueUrl: '', reason: blk.why,
+    }, keepBody);
+    return json({ ok: false, err: 'blocked' }, 403);
+  }
+  const mod = await moderate(env.AI, body);
+  if (!mod.ok) {
+    const note = await noteRejection(kv, ghToken, { issue: issueNo });
+    await sendlog(kv, {
+      api: 'reply', mode: 'rejected', id, deviceId8: '', to: '(预审拒绝,未写入)',
+      subject: '预审拒绝 · ' + categoryName(mod.cat), bodyHead: body.slice(0, 200),
+      diag: '', log: '', logLines: 0,
+      result: '第 ' + note.count + ' 次被拒' + (note.autoBlocked ? ' ⇒ 已自动拉黑(' + note.how + ')' : ''),
+      err: '', issueUrl: '', reason: '来源 ' + mod.src + ' · 类别 ' + mod.cat + ' · ' + mod.detail,
+      modSrc: mod.src, modCat: mod.cat, modDetail: mod.detail,
+      modMs: mod.wordMs, aiMs: mod.aiMs, aiState: mod.aiState, aiReason: mod.aiReason,
+    }, keepBody);
+    return json({ ok: false, err: 'rejected' }, 400);
+  }
+
   // 测试件:append 一条,cid 从 KV 里的计数器取(>0 且递增,App 的红点判据才成立)
   if (found.kind === 'test') {
     const t = found.data;
@@ -64,6 +99,8 @@ export const onRequestPost = async ({ request, env }) => {
       api: 'reply', mode: 'test', id, deviceId8: '', to: '(测试模式,未写入 GitHub)',
       subject: '用户追加回复 → 工单 ' + id, bodyHead: body.slice(0, 200), diag: '', log: '', logLines: 0,
       result: 'ok(test) cid=' + cid, err: '', issueUrl: '', reason: '测试件',
+      modSrc: '', modCat: '', modDetail: '', modMs: mod.wordMs, aiMs: mod.aiMs,
+      aiState: mod.aiState, aiReason: mod.aiReason,
     }, keepBody);
     return json({ ok: true, cid }, 200);
   }
@@ -85,6 +122,8 @@ export const onRequestPost = async ({ request, env }) => {
     api: 'reply', mode: 'issue', id, deviceId8: '', to: 'GitHub issue #' + id,
     subject: '用户追加回复 → 工单 ' + id, bodyHead: body.slice(0, 200), diag: '', log: '', logLines: 0,
     result: '已写入评论 cid=' + res.json.id, err: '', issueUrl: res.json.html_url || '', reason: '',
+    modSrc: '', modCat: '', modDetail: '', modMs: mod.wordMs, aiMs: mod.aiMs,
+    aiState: mod.aiState, aiReason: mod.aiReason,
   }, keepBody);
   return json({ ok: true, cid: res.json.id }, 200);
 };

@@ -42,6 +42,32 @@ export const onRequestGet = async ({ request, env }) => {
   });
 };
 
+/**
+ * 审核那一行。**不做解封按钮**(owner 令:解封 = 去 GitHub 把 `blocked` 标签撕掉)——
+ * 一个能在这一页解封的按钮,等于把这页的口令变成"能改惩罚状态"的口令,量级不一样。
+ */
+function modRow_claudecode_20260909(r) {
+  if (!r.modSrc && !r.aiState) return '';
+  const src = r.modSrc === 'word' ? '关键词库' : (r.modSrc === 'ai' ? 'Workers AI' : '(未命中)');
+  const cat = r.modCat ? h_claudecode_20260908(r.modCat + ' ' + catName_claudecode_20260909(r.modCat)) : '-';
+  const ai = r.aiState === 'unavailable' ? `<b>ai_unavailable</b> —— ${h_claudecode_20260908(r.aiReason || '')}`
+    : (r.aiState === 'skipped' ? '未调用(词表已拦下)' : 'ok');
+  return `<dt>审核</dt><dd>来源 ${h_claudecode_20260908(src)} · 类别 ${cat}
+    · 命中 ${h_claudecode_20260908(r.modDetail || '-')}<br>
+    AI ${ai} · 词表 ${h_claudecode_20260908(r.modMs ?? '-')} ms · AI ${h_claudecode_20260908(r.aiMs ?? '-')} ms</dd>`;
+}
+
+/** 类别码 → 中文。这一页是**只读展示**,故意把表抄一份在这儿而不是 import 审核模块 —— 展示页不该有能力去做判定。 */
+function catName_claudecode_20260909(cat) {
+  const m = {
+    abuse: '辱骂脏话', porn: '色情招揽', gambling: '赌博', drug: '毒品',
+    fraud: '诈骗黑产', ad: '广告导流', politics: '政治敏感',
+    S1: '暴力犯罪', S2: '非暴力犯罪', S3: '性犯罪', S4: '儿童性剥削',
+    S9: '无差别武器', S10: '仇恨', S11: '自杀自残', S12: '色情内容',
+  };
+  return String(cat || '').split('+').map((c) => m[c] || c).join(' / ');
+}
+
 function h_claudecode_20260908(v) {
   return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -65,16 +91,19 @@ function html_claudecode_20260908(rows, total, testMode, logBody) {
   const items = rows.map((r) => {
     const badge = h_claudecode_20260908(r.mode || '-');
     const link = r.issueUrl ? ` · <a href="${h_claudecode_20260908(r.issueUrl)}" rel="noreferrer noopener">工单</a>` : '';
-    return `<details><summary><span class="t">${bj_claudecode_20260908(r.at)}</span>
+    const bad = (r.mode === 'rejected' || r.mode === 'blocked') ? ' class="bad"' : '';
+    return `<details${bad}><summary><span class="t">${bj_claudecode_20260908(r.at)}</span>
       <span class="m ${badge}">${badge}</span>
       <span class="a">${h_claudecode_20260908(r.api || '-')}</span>
       <span class="i">${h_claudecode_20260908(r.id || '-')}</span>
-      <span class="d">${h_claudecode_20260908(r.deviceId8 || '')}</span></summary>
+      <span class="d">${h_claudecode_20260908(r.deviceId8 || '')}</span>${
+      r.modCat ? `<span class="cat">${h_claudecode_20260908(catName_claudecode_20260909(r.modCat))}</span>` : ''}</summary>
       <dl>
         <dt>标题</dt><dd>${h_claudecode_20260908(r.subject)}</dd>
         <dt>去向</dt><dd>${h_claudecode_20260908(r.to)}${link}</dd>
         <dt>结果</dt><dd>${h_claudecode_20260908(r.result)}${r.err ? ' — <b>' + h_claudecode_20260908(r.err) + '</b>' : ''}</dd>
         <dt>原因</dt><dd>${h_claudecode_20260908(r.reason || '-')}</dd>
+      ${modRow_claudecode_20260909(r)}
         <dt>正文前 200 字</dt><dd><pre>${h_claudecode_20260908(r.bodyHead)}</pre></dd>
         <dt>诊断</dt><dd><pre>${h_claudecode_20260908(r.diag)}</pre></dd>
       </dl>
@@ -96,13 +125,18 @@ summary{cursor:pointer;white-space:nowrap;overflow-x:auto;display:block}
 .t{font-variant-numeric:tabular-nums;color:#555}
 .m{display:inline-block;padding:0 6px;border-radius:4px;font-size:12px;background:#eee;margin:0 6px}
 .m.issue{background:#c8e6c9}.m.test{background:#ffe0b2}.m.queued{background:#e1bee7}
+.m.rejected{background:#ffcdd2;color:#b71c1c;font-weight:600}.m.blocked{background:#b71c1c;color:#fff;font-weight:600}
+details.bad{border-color:#e57373;background:#fff5f5}
+.cat{display:inline-block;padding:0 6px;border-radius:4px;background:#ffcdd2;color:#b71c1c;font-size:12px;margin-left:6px}
 .a{color:#0066cc;margin-right:6px}.i{font-weight:600;margin-right:6px}.d{color:#888;font-size:12px}
 dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:8px 0}
 dt{color:#666;font-size:13px}dd{margin:0;min-width:0}
 pre{white-space:pre-wrap;word-break:break-word;background:#f6f6f6;padding:8px;border-radius:6px;margin:0;font-size:13px}
 @media(prefers-color-scheme:dark){body{background:#111;color:#eee}details{border-color:#333}pre{background:#1c1c1c}
 .b.on{background:#14301a;color:#a5d6a7}.b.off{background:#3a2a10;color:#ffcc80}.b.warn{background:#33320f;color:#e6ee9c}
-.m{background:#333}.m.issue{background:#1b5e20}.m.test{background:#e65100}.m.queued{background:#4a148c}}
+.m{background:#333}.m.issue{background:#1b5e20}.m.test{background:#e65100}.m.queued{background:#4a148c}
+.m.rejected{background:#7f1d1d;color:#ffcdd2}.m.blocked{background:#b71c1c;color:#fff}
+details.bad{border-color:#7f1d1d;background:#2a1414}.cat{background:#7f1d1d;color:#ffcdd2}}
 </style></head><body>
 <h1>反馈发送记录 · 小天天练跳绳</h1>
 ${banner}${privacy}
