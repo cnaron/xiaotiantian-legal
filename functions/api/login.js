@@ -1,12 +1,13 @@
 // POST /api/login  {passphrase} → 口令对则下发签名 cookie。 2026.09.07 Naron
-// 阴性对照(G-SEC):口令错 401;同 IP 连续 5 次错之后,**即使口令对也 429**,15 min 自动解锁。
-import { makeToken, sessionCookie, timingSafeEqual, clientIp, failCount, bumpFail, clearFail, FAIL_LIMIT, json } from '../_lib/auth.js';
+// X123 颗粒 8(2026-09-09):防爆破**不再按 IP** —— 口令对的请求永远 0 延时、永不被锁;
+//   口令错的请求按「最近 15 分钟全局失败次数」递增延时(250ms × n,封顶 4s),不返回 429。
+//   为什么这么选、代价是什么:PREREG-X123-G8.md §3 与 _lib/auth.js 里的注释。
+// 阴性对照(G8-SEC,取代旧 G-SEC):口令错 401 且第 n 次耗时单调上去;口令对 200 且耗时不涨。
+import { makeToken, sessionCookie, timingSafeEqual,
+  bumpFail_claudecode_20260909 as bumpFail,
+  failDelay_claudecode_20260909 as failDelay, json } from '../_lib/auth.js';
 
 export const onRequestPost = async ({ request, env }) => {
-  const ip = clientIp(request);
-  if (await failCount(env, ip) >= FAIL_LIMIT) {
-    return json({ ok: false, error: '错误次数过多,请 15 分钟后再试' }, 429);
-  }
   let pass = '';
   try {
     const ct = request.headers.get('Content-Type') || '';
@@ -16,9 +17,9 @@ export const onRequestPost = async ({ request, env }) => {
 
   if (!env.EDIT_PASSPHRASE) return json({ ok: false, error: '服务端未配置口令' }, 500);
   if (!timingSafeEqual(pass, env.EDIT_PASSPHRASE)) {
-    await bumpFail(env, ip);
+    await bumpFail(env);
+    await failDelay(env);          // 先记账再延时 ⇒ 第 n 次错的延时里已经含这一次
     return json({ ok: false, error: '口令不对' }, 401);
   }
-  await clearFail(env, ip);
   return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(await makeToken(env)) });
 };

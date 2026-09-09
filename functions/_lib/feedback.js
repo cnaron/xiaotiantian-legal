@@ -9,6 +9,8 @@
 export const RATE_WINDOW_SEC_20260908 = 600;
 export const RATE_MAX_20260908 = { contact: 5, thread: 30, reply: 5, sendlog: 60 };
 export const RATE_GLOBAL_DAY_20260908 = 300;
+// 主体拿不到时(比如请求体里没带设备编号)共用这一个桶 —— 宁可几个人挤一个窗口,也不回头去认 IP。
+export const RATE_SUBJECT_NONE_20260909 = 'nodev';
 export const BODY_MAX_BYTES_20260908 = 131072;      // 128 KB
 export const REPLY_BODY_MAX_BYTES_20260908 = 8192;
 export const DESC_MAX_20260908 = 200;
@@ -69,22 +71,6 @@ export function timingSafeEqual_claudecode_20260908(a, b) {
   const n = Math.max(A.length, B.length, 1);
   for (let i = 0; i < n; i++) diff |= (A[i % A.length || 0] || 0) ^ (B[i % B.length || 0] || 0);
   return diff === 0;
-}
-
-export function clientIp_claudecode_20260908(request) {
-  return request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || '0.0.0.0';
-}
-
-export function maskIp_claudecode_20260908(ip) {
-  if (ip.includes('.')) {
-    const p = ip.split('.');
-    if (p.length === 4) { p[3] = 'x'; return p.join('.'); }
-  }
-  if (ip.includes(':')) {
-    const p = ip.split(':');
-    return p.slice(0, Math.ceil(p.length / 2)).join(':') + '::x';
-  }
-  return ip;
 }
 
 // ── 清洗 ───────────────────────────────────────────────────────────────
@@ -398,9 +384,19 @@ export async function ticketTokenValid_claudecode_20260908(secret, id, token) {
 }
 
 // ── 限流(KV 滑动窗口;同一 colo 内写后立刻可读,跨 colo 最终一致) ──────
-export async function rateAllow_claudecode_20260908(kv, ip, bucket, max, now = Date.now()) {
+/**
+ * ★ X123 颗粒 8(2026-09-09,owner 令「别收 IP 这种敏感信息」)—— **限流主体不再是 IP**。
+ *   以前键是 `fbrate:<桶>:<IP>`,等于把每个用户的 IP 明文写进 KV 存 10 分钟;
+ *   现在主体由各接口自己给:contact = App 自己生成的设备编号、reply/thread = 工单号、
+ *   sendlog = 常量 `owner`(那页只有 owner 用)。**阈值与窗口一个都没动。**
+ * ★ 代价写在 PREREG-X123-G8.md §5:设备编号/工单号是请求体里的东西 ⇒ 限流只能挪到解析之后,
+ *   JSON 坏掉的请求不再计入单主体窗口(仍被 globalDayAllow 的 300/天 计入);
+ *   拿到 X-RC-Key 的人换工单号可以绕开单主体窗口(RC_KEY 在 App 二进制里,视同半公开)。
+ * @param subject 主体标识:必须是已清洗过的串(cleanDeviceId / cleanId 的输出,或常量)
+ */
+export async function rateAllow_claudecode_20260908(kv, subject, bucket, max, now = Date.now()) {
   if (!kv) return true;                          // KV 不可用时不拦真实反馈
-  const key = 'fbrate:' + bucket + ':' + ip;
+  const key = 'fbrate:' + bucket + ':' + (subject || RATE_SUBJECT_NONE_20260909);
   let hits = [];
   try { hits = JSON.parse((await kv.get(key)) || '[]'); } catch (e) { hits = []; }
   if (!Array.isArray(hits)) hits = [];

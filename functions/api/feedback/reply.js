@@ -8,7 +8,7 @@ import {
   RATE_MAX_20260908, REPLY_BODY_MAX_BYTES_20260908, REPLY_MAX_20260908,
   USER_REPLY_PREFIX_20260908,
   json_claudecode_20260908 as json, timingSafeEqual_claudecode_20260908 as tseq,
-  clientIp_claudecode_20260908 as clientIp, cleanId_claudecode_20260908 as cleanId,
+  cleanId_claudecode_20260908 as cleanId,
   clean_claudecode_20260908 as clean, ticketTokenValid_claudecode_20260908 as tokenValid,
   rateAllow_claudecode_20260908 as rateAllow, logBodyOn_claudecode_20260908 as logBodyOn,
   sendlogAppend_claudecode_20260908 as sendlog,
@@ -27,14 +27,10 @@ import {
 
 export const onRequestPost = async ({ request, env }) => {
   const kv = env.LEGAL_CONTENT || null;
-  const ip = clientIp(request);
 
   // key 只认 Pages secret;secret 缺席 ⇒ 全拒(不给默认值,见 _lib/feedback.js 顶部)
   if (!env.RC_KEY || !tseq(env.RC_KEY, request.headers.get('x-rc-key') || '')) {
     return json({ ok: false, err: 'forbidden' }, 403);
-  }
-  if (!(await rateAllow(kv, ip, 'reply', RATE_MAX_20260908.reply))) {
-    return json({ ok: false, err: 'rate_limited' }, 429);
   }
 
   const raw = await request.text();
@@ -49,6 +45,14 @@ export const onRequestPost = async ({ request, env }) => {
   const id = cleanId(data.id);
   const body = clean(data.body, REPLY_MAX_20260908, false);
   if (id === '' || body === '') return json({ ok: false, err: 'bad_request' }, 400);
+
+  // 限流 —— **主体 = 工单号,不再是 IP**(X123 颗粒 8,owner 令「别收 IP」)。
+  //   ★ 主体在请求体里 ⇒ 只能挪到解析之后;代价与残留风险写在 PREREG-X123-G8.md §5。
+  //   ★ 放在 token 校验**之前**:不然没票的人可以无限次去打 resolveTicket(那会打 GitHub API)。
+  //   ★ 阈值一个没动:5 次 / 600 秒。
+  if (!(await rateAllow(kv, id, 'reply', RATE_MAX_20260908.reply))) {
+    return json({ ok: false, err: 'rate_limited' }, 429);
+  }
 
   const ghToken = id.startsWith('t') || id.startsWith('q') ? '' : await installationToken(env, kv);
   const found = await resolveTicket(kv, ghToken, id);

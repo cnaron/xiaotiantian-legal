@@ -5,7 +5,7 @@
 import {
   RATE_MAX_20260908,
   NO_STORE_20260908, json_claudecode_20260908 as json,
-  timingSafeEqual_claudecode_20260908 as tseq, clientIp_claudecode_20260908 as clientIp,
+  timingSafeEqual_claudecode_20260908 as tseq,
   hmacHex_claudecode_20260908 as hmacHex, rateAllow_claudecode_20260908 as rateAllow,
 } from '../../_lib/feedback.js';
 
@@ -13,7 +13,9 @@ const MAX_ROWS_20260908 = 200;
 
 export const onRequestGet = async ({ request, env }) => {
   const kv = env.LEGAL_CONTENT || null;
-  if (!(await rateAllow(kv, clientIp(request), 'sendlog', RATE_MAX_20260908.sendlog))) {
+  // 限流主体 = 常量 `owner`(X123 颗粒 8:不再按 IP)。这一页只有 owner 看,
+  // 本来就是单主体,换成常量等于原样;阈值一个没动:60 次 / 600 秒。
+  if (!(await rateAllow(kv, 'owner', 'sendlog', RATE_MAX_20260908.sendlog))) {
     return json({ ok: false, err: 'rate_limited' }, 429);
   }
   const want = env.TICKET_SECRET ? (await hmacHex(env.TICKET_SECRET, 'sendlog')).slice(0, 32) : '';

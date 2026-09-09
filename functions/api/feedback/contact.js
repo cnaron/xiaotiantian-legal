@@ -22,7 +22,7 @@ import {
   DESC_MAX_20260908, CONTACT_MAX_20260908, META_MAX_20260908, GH_BODY_MAX_20260908,
   USER_MSG_PREFIX_20260909, OWNER_MENTION_20260908,
   json_claudecode_20260908 as json, timingSafeEqual_claudecode_20260908 as tseq,
-  clientIp_claudecode_20260908 as clientIp, maskIp_claudecode_20260908 as maskIp,
+  RATE_SUBJECT_NONE_20260909,
   clean_claudecode_20260908 as clean, cleanDeviceId_claudecode_20260908 as cleanDeviceId,
   cleanJws_claudecode_20260908 as cleanJws, cleanLog_claudecode_20260908 as cleanLog,
   sessionText_claudecode_20260908 as sessionText,
@@ -62,18 +62,14 @@ function bj_claudecode_20260908(withSec) {
 
 export const onRequestPost = async ({ request, env }) => {
   const kv = env.LEGAL_CONTENT || null;
-  const ip = clientIp(request);
 
   // ① key —— 缺或错一律 403,不区分(不给扫描者反馈)
   // key 只认 Pages secret;secret 缺席 ⇒ 全拒(不给默认值,见 _lib/feedback.js 顶部)
   if (!env.RC_KEY || !tseq(env.RC_KEY, request.headers.get('x-rc-key') || '')) {
     return json({ ok: false, err: 'forbidden' }, 403);
   }
-  // ② 限流 —— 放在参数校验之前:任何一次尝试(哪怕参数错)都计数
+  // ② 全局日限 —— 仍然放在参数校验之前:任何一次尝试(哪怕请求体是坏的)都计数
   if (!(await globalDayAllow(kv))) return json({ ok: false, err: 'rate_limited' }, 429);
-  if (!(await rateAllow(kv, ip, 'contact', RATE_MAX_20260908.contact))) {
-    return json({ ok: false, err: 'rate_limited' }, 429);
-  }
 
   // ③ 参数
   const raw = await request.text();
@@ -85,6 +81,17 @@ export const onRequestPost = async ({ request, env }) => {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return json({ ok: false, err: 'bad_request' }, 400);
   }
+
+  // ②' 单主体限流 —— **主体 = App 自己生成的设备编号,不再是 IP**(X123 颗粒 8,owner 令)。
+  //   ★ 位置:必须在解析之后 —— 主体在请求体里,不解析就拿不到。所以「请求体坏掉的尝试
+  //     也计数」这条性质**没了**(那种请求现在只被上面的全局 300/天 计入),写在 PREREG §5③。
+  //   ★ 位置仍在**其它参数校验之前**:参数错(比如 desc 空)照样计数,这条性质保留。
+  //   ★ 阈值一个没动:5 次 / 600 秒。
+  const deviceId = cleanDeviceId(data.deviceId);
+  if (!(await rateAllow(kv, deviceId || RATE_SUBJECT_NONE_20260909, 'contact', RATE_MAX_20260908.contact))) {
+    return json({ ok: false, err: 'rate_limited' }, 429);
+  }
+
   const desc = clean(data.desc, DESC_MAX_20260908, false);
   if (desc === '') return json({ ok: false, err: 'bad_request' }, 400);
 
@@ -95,7 +102,6 @@ export const onRequestPost = async ({ request, env }) => {
   const device = clean(data.device, META_MAX_20260908, true);
   const os = clean(data.os, META_MAX_20260908, true);
   const locale = clean(data.locale, META_MAX_20260908, true);
-  const deviceId = cleanDeviceId(data.deviceId);
   const jwsRaw = cleanJws(data.channel && data.channel.appTransactionJWS);
   const jws = await jwsInspect(jwsRaw);
   const chanText = channelText(data.channel, jws);
@@ -158,7 +164,6 @@ export const onRequestPost = async ({ request, env }) => {
     ['最近一局', sessionText(data.lastSession)],
     ['权限', permissionText(data.permissions)],
     ['提交时间', bj_claudecode_20260908(true)],
-    ['来源 IP', maskIp(ip)],
   );
   // 发送记录页看的是纯文本版(那一页不渲染 markdown,折叠块在那儿只会变成一坨标签)
   const diagPlain = diagRows.map((r) => r[0] + ':' + r[1]).join('\n');

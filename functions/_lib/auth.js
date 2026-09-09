@@ -4,7 +4,8 @@
 //   服务端只做「签名对不对 + 过没过期」两件事,不存会话(KV 省一次读)。
 export const COOKIE_NAME = 'xtt_edit';
 export const SESSION_MS = 12 * 60 * 60 * 1000;
-export const FAIL_LIMIT = 5;
+// FAIL_LIMIT(旧的「同 IP 5 次即锁」)随 X123 颗粒 8 一起退休:没有主体就锁不了单个人,
+// 全局硬锁会把 owner 自己锁在门外。现在用的是下面的递增延时。
 export const FAIL_TTL_SEC = 15 * 60;
 
 const enc = new TextEncoder();
@@ -66,23 +67,43 @@ export function clearCookie() {
   return `${COOKIE_NAME}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`;
 }
 
-export function clientIp(request) {
-  return request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
+// ── /edit 登录的防爆破(X123 颗粒 8 起**不再按 IP**)──────────────────────────
+// 旧写法:`login_fail:<IP>`,同一 IP 连错 5 次 ⇒ 15 分钟内即使口令对也 429。
+//   它把访客 IP 明文写进 KV 存 15 分钟 —— owner 令「别收 IP 这种敏感信息」之后不能留。
+// 换成什么:**全局错误计数 + 递增延时,不硬锁**。三个候选与取舍见 PREREG-X123-G8.md §3。
+//   ★ 为什么不做「全局硬锁」:这个端点是公开的,任何人连按 5 次错口令就能**把 owner 自己
+//     锁在门外** —— 白送的 DoS。所以口令**对**的请求永远 0 延时、永远进得去。
+//   ★ 为什么不按 cookie:清一下 cookie 就绕过去了,等于没有。
+//   ★ 诚实的局限:并发爆破能绕过延时(每条请求各自延时,不串行)。真正的防线仍然是
+//     口令强度 + 上面那个常数时间比较。旧的按 IP 硬锁对换 IP 的攻击者本来也无效。
+//   ⇒ 颗粒 3 的 `G-SEC`(同 IP 5 次后即使口令对也 429)**本轮改判**,新尺子见 RECEIPT §4。
+export const FAIL_DELAY_STEP_MS_20260909 = 250;     // 每一次近期失败加的延时
+export const FAIL_DELAY_MAX_MS_20260909 = 4000;     // 封顶,免得把 Worker 挂住
+
+/** 15 分钟一格的窗口键;窗口滚动 = 自然遗忘,不需要额外清理 */
+function failWindowKey_claudecode_20260909(now = Date.now()) {
+  return 'login_fail:global:' + Math.floor(now / (FAIL_TTL_SEC * 1000));
 }
 
-export async function failCount(env, ip) {
+export async function failCount_claudecode_20260909(env) {
   if (!env.LEGAL_CONTENT) return 0;
-  const v = await env.LEGAL_CONTENT.get('login_fail:' + ip);
+  const v = await env.LEGAL_CONTENT.get(failWindowKey_claudecode_20260909());
   return v ? parseInt(v, 10) || 0 : 0;
 }
-export async function bumpFail(env, ip) {
+
+export async function bumpFail_claudecode_20260909(env) {
   if (!env.LEGAL_CONTENT) return;
-  const n = (await failCount(env, ip)) + 1;
-  await env.LEGAL_CONTENT.put('login_fail:' + ip, String(n), { expirationTtl: FAIL_TTL_SEC });
+  const key = failWindowKey_claudecode_20260909();
+  const n = (await failCount_claudecode_20260909(env)) + 1;
+  await env.LEGAL_CONTENT.put(key, String(n), { expirationTtl: 2 * FAIL_TTL_SEC });
 }
-export async function clearFail(env, ip) {
-  if (!env.LEGAL_CONTENT) return;
-  await env.LEGAL_CONTENT.delete('login_fail:' + ip);
+
+/** 口令错时按「最近 15 分钟全局失败次数」拖一下;返回实际拖了多少毫秒(闸要读它) */
+export async function failDelay_claudecode_20260909(env) {
+  const n = await failCount_claudecode_20260909(env);
+  const ms = Math.min(n * FAIL_DELAY_STEP_MS_20260909, FAIL_DELAY_MAX_MS_20260909);
+  if (ms > 0) await new Promise((r) => setTimeout(r, ms));
+  return ms;
 }
 
 export const NO_STORE = {
