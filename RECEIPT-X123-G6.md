@@ -1,7 +1,8 @@
-# X123 颗粒 6 · 后端撤掉图片能力 + 删过期重复站 · 回执(**未完成,停在清桶中途**)
+# X123 颗粒 6 · 后端撤掉图片能力 + 删过期重复站 · 回执(**已完成**)
 
-> 落于 2026-09-08 18:35 北京时间。预注册见 `PREREG-X123-G6.md`(动第一行代码前立的,判据事后没改)。
-> 代码那半边**已完成并上线**;桶与重复站那半边**停在中途等 owner 点头**,状态与续跑命令见 §6。
+> 落于 2026-09-08 18:35 北京时间,**2026-09-09 02:20 补完收尾**(owner 09-09 明确「继续」后执行三件不可逆操作)。
+> 预注册见 `PREREG-X123-G6.md`(动第一行代码前立的,判据事后没改)。**13 条闸:12 绿 / 1 黄 / 0 红 / 0 没跑**,
+> 另补跑 2 条预注册里没有的(G6-STRIP-REAL、G6-AFTER-ALL,均绿)。
 
 ## 大白话解释
 
@@ -15,14 +16,15 @@
 (#5 / #6)正文里已经写进去的那几行「图片代码」,服务端仍然会**剥掉**再给 App,
 用户不会看到一行乱码似的东西;这一条拿两个真工单的**真正文**跑过,10 处图行全剥净。
 
-**没做完的是什么。** 存图的那个桶里原本有 74 张图。删到第 45 张时 owner 中断了操作,
-现在**还剩 29 张**(全是昨天测速/配额测试留下的临时件;两个真工单 #5 / #6 的 9 张
-**已经删掉了,删掉就没了**)。桶本身、以及那个挂着邮箱的旧站 `xiaotiantian-legal`,
-**都还在**,等 owner 说一声再继续。
+**收尾三件也做完了(owner 09-09 点头后执行,都不可逆)。** ① 存图的桶原本有 74 张图,
+**现在一张不剩**(列举回读 = 0 条);② **桶本身已删除**(两条独立路径都回「这个桶不存在」);
+③ 那个挂着邮箱的旧站 `xiaotiantian-legal.pages.dev` **已删除**,四页现在全部打不开,
+而正式站同一时刻五页全部正常。
 
-**对产品意味着什么。** App 侧(颗粒 16)现在可以放心不做上传功能:后端已经没有接口可调了。
-另外提醒一件事:owner 在 GitHub 上看 issue #5 / #6 时,里面的截图会显示成**裂图**——
-图已经删了,这是预期结果,不是出故障。
+**对产品意味着什么。** App 侧(颗粒 16)现在可以放心不做上传功能:后端已经没有接口可调、
+也没有地方存图了。两件要有心理准备的事:① owner 在 GitHub 上看 issue #5 / #6 时,里面的
+截图会显示成**裂图**——图已经删了,这是预期结果不是故障;② 线上从此只有一份法律页
+(`xiaotiantian-app.pages.dev`),不会再出现"两份条款互相打架"。
 
 ---
 
@@ -73,7 +75,7 @@
 ⇒ **今后「部署后闸」必须重复采样直到稳定,一次读数不能当证据**;
 本回执 §2 的表是稳定后重采的。
 
-# 4. 闸(13 条:🟢 绿 / 🔴 红 / ⬜ 没跑)
+# 4. 闸(预注册 13 条 + 收尾补的 2 条 = 15 条:🟢 14 绿 / 🟡 1 黄 / 🔴 0 红 / ⬜ 0 没跑)
 
 | 闸 | 状态 | 证据 |
 |---|---|---|
@@ -86,43 +88,80 @@
 | **G6-LEGAL-BYTES** | 🟢 | 部署前/后 `/`、`/privacy`、`/terms`、`/support`、`/edit` 五个 sha256 **两两相同**(`7b75ffe5…` / `2036f5f6…` / `792df4f2…` / `14e2b4df…` / `4c3a2214…`) |
 | **G6-UNIT** | 🟢 | `node tools/test_feedback.mjs` ⇒ **80/80 通过**(改前 95);`tools/test_render.mjs` ⇒ 46/46 |
 | **G6-GREP-ZERO** | 🟡 **部分** | `functions/` + `wrangler.toml` 下:`FEEDBACK_IMG` **0**、`splitImages` **0**、`looksLikeJpeg` **0**;`r2_buckets` 1(wrangler.toml 里那句"故意没有"的注释)、`feedback/img` 1 + `attach` 2(三处解释性注释)、`upload` 1(**Tailwind CSS 里的 `::-webkit-file-upload-button`**,与我们无关)。**没有一处是可执行代码**。预注册写的是「0 命中」,实测 5 处,逐条列在这里,不改预注册 |
-| **G6-R2-EMPTY** | 🔴 **未完成** | 删到一半被中断:**74 → 29**(§5) |
+| **G6-R2-EMPTY** | 🟢 | 分两批删完 **74 → 45 → 0**;REST 列举回读 `success=true` / **0 条**;`wrangler r2 bucket delete` 成功;`bucket list` 里 `xiaotiantian-feedback` **0 命中**;`bucket info` 与 REST 两条独立路径都回 **10006 The specified bucket does not exist**(§5) |
 | **G6-R2-CONTROL** ★ | 🟢 | 阳性对照成立:列举确实看得见对象(首次列举 **74 条 / 7.29 MB**,不是一上来就是空) |
 | **G6-DUP-BEFORE** | 🟢 | 删站前实测:`xiaotiantian-legal.pages.dev` 四页**全部 200**;正文裸词命中 `@126.com` **10** 处、`mailto:` **4** 处、`邮箱` **14** 处 ⇒ owner 的删站理由(挂邮箱、与裁决冲突)属实,不是我转述的 |
-| **G6-DUP-AFTER** | ⬜ **没跑** | 站还在,没删(等 owner 点头) |
+| **G6-DUP-AFTER** | 🟢 | `pages project delete xiaotiantian-legal --yes` ⇒ `Successfully deleted`;`project list` 里只剩 `xiaotiantian-app`;旧站四页 `/`、`/privacy`、`/terms`、`/support` **全部 530**(Cloudflare `error code: 1016`,连查三次都是),邮箱裸词 **0 命中**(页面根本取不到);**阳性对照**:主站同一时刻五页 **全 200**(§5) |
+| **G6-AFTER-ALL** ★(预注册里没有,收尾补的) | 🟢 | 删桶删站**之后**再全跑一遍:法律五页与**本轮动手前**仍逐字节相同;三条图片路由仍 405/405/404;带 key 真跑 contact→reply→thread **全绿**,`images` 字样 **0 次**、每条 keys 仍是 `cid/from/body/at` ⇒ 删桶没有波及工单功能 |
 | **G6-SECRET** | 🟢 | 本轮两个 commit 改到的文件里,`X-RC-Key` 值 / sendlog key / Cloudflare token **0 命中**;阴性对照:同样的搜法在本机 `/Users/cc/x123/DONE-G3`(**不入 git**)里能搜到 ⇒ 尺子会数数 |
 
-# 5. R2 现状(**这是本回执最要紧的一段**)
+# 5. 三件不可逆操作的执行记录(命令 + 回读)
+
+> owner 2026-09-09 明确「继续」后执行。每步都贴了命令与回读,回读一律用**能数出东西的尺子**
+> (阳性对照),不用只会说"空"的那种。
+
+## ① 清空 R2 对象:74 → 0
 
 | 时刻 | 对象数 | 字节 | 按工单分 |
 |---|---|---|---|
-| 动手前 | **74** | 7 639 641(7.29 MB) | `5`:4 · `6`:5 · `t1a07ff14666714f`:22 · `t1a07ffd2e5ecadd`:20 · `t1a080000c0eb2a6`:12 · `t1a08000c95757d6`:10 · `t1a0805853137dbe`:1 |
-| 中断后(现在) | **29** | 2 837 917(2.71 MB) | `t1a07ffd2e5ecadd`:6 · `t1a080000c0eb2a6`:12 · `t1a08000c95757d6`:10 · `t1a0805853137dbe`:1 |
-| 差 | **已删 45** | | `5`:4 · `6`:5 · `t1a07ff14666714f`:22 · `t1a07ffd2e5ecadd`:14 |
+| 动手前(09-08) | **74** | 7 639 641(7.29 MB) | `5`:4 · `6`:5 · `t1a07ff14666714f`:22 · `t1a07ffd2e5ecadd`:20 · `t1a080000c0eb2a6`:12 · `t1a08000c95757d6`:10 · `t1a0805853137dbe`:1 |
+| 第一批被中断后 | **29** | 2 837 917(2.71 MB) | 全部 `t…` 开头(测试件) |
+| 第二批删完(09-09) | **0** | 0 | — |
 
-- **已经不可逆的部分**:两个真工单 **#5(4 张)/ #6(5 张)的图已经删了**。
-  ⇒ owner 在 GitHub 上看这两个 issue 会看到**裂图**。这是预期结果。
-- 剩下的 29 张**全部是测试件**(`t…` 开头 = 颗粒 5 的测速/配额临时工单),没有真实用户数据。
-- 复核过:现存 29 个键**全部来自动手前那份名单**,新增 **0** ⇒ 中间没有人往桶里写新东西
-  (合理:上传接口已经下线)。
-- 任务书原以为"桶里应只有 issue #5/#6 的测试图",**实测是 74 个、跨 7 个工单号**;
-  多出来的是颗粒 5 §2 测速与配额测试灌进去的。这条差异属实,登记在此。
-- 桶 `xiaotiantian-feedback` **还在**;`wrangler r2 bucket info` 报的 `object_count` 是**滞后值**
-  (动手前它报 68,同一时刻真列举是 74)⇒ **不要拿 `bucket info` 当清零判据**,要用列举。
-- 本机 `wrangler 4.129.1` **没有** `r2 object list` 子命令。预注册里为此准备了"临时只读列举端点",
-  **实际没用上**:Cloudflare REST `GET /accounts/<id>/r2/buckets/<桶>/objects` 能直接列。
-  ⇒ 少部署一个临时端点,也就少留一个历史部署 URL 上的钉子。
+- 命令:`DELETE /accounts/<id>/r2/buckets/xiaotiantian-feedback/objects/<key>`,逐键。
+  第一批 45 条(其中含 issue **#5 的 4 张、#6 的 5 张**真截图);第二批 **29 条,成功 29 / 失败 0**。
+- 回读:REST 列举 ⇒ `success=true`,**剩余 0 条**。
+  **阳性对照**:同一把尺子在 `gugu-files` 桶上列出 5 条 ⇒ 这个 0 不是"它只会说空"。
+- **不可逆且已发生**:#5 / #6 的 9 张图删掉就没了 ⇒ owner 在 GitHub 上看这两个 issue 是**裂图**。
+  其余 65 张全是颗粒 5 测速/配额测试灌的临时件,无真实用户数据。
+- 复核过:第二批删之前列出的 29 个键**全部来自动手前那份名单**,新增 **0**
+  ⇒ 上传接口下线之后没有新对象落进来。
+- 任务书原以为"桶里应只有 issue #5/#6 的测试图",**实测 74 个、跨 7 个工单号**。差异属实,登记。
 
-# 6. 没做完的三件事 + 续跑命令
+## ② 删桶
 
-停在这里的原因:清桶跑到一半时 owner 中断了工具调用,我问了"要不要继续"、**尚未拿到回复**。
-删对象 / 删桶 / 删站都是**不可逆**且**对外**的操作,不拿到明确一声不自行续跑。
+```
+$ npx wrangler r2 bucket delete xiaotiantian-feedback
+Deleting bucket xiaotiantian-feedback.
+Deleted bucket xiaotiantian-feedback.
+```
 
-| # | 没做的事 | 续跑命令(在 `/Users/cc/Public/x84sb/legal-site` 下) |
+回读(两条**独立**路径,不互相背书):
+
+| 问法 | 回答 |
+|---|---|
+| `wrangler r2 bucket list` | `xiaotiantian-feedback` **0 命中**;阳性对照 `gugu-files` **1 命中** |
+| `wrangler r2 bucket info xiaotiantian-feedback` | `ERROR … The specified bucket does not exist. [code: 10006]` |
+| REST `GET …/buckets/xiaotiantian-feedback/objects` | `{"success":false,"errors":[{"code":10006,…}]}` |
+
+## ③ 删重复站
+
+```
+$ npx wrangler pages project list        # 先核名
+xiaotiantian-app     xiaotiantian-app.pages.dev     16 hours ago
+xiaotiantian-legal   xiaotiantian-legal.pages.dev   1 day ago
+$ npx wrangler pages project delete xiaotiantian-legal --yes
+Deleting xiaotiantian-legal
+Successfully deleted xiaotiantian-legal
+```
+
+| 域名 | 删之前 | 删之后 |
 |---|---|---|
-| 1 | 删掉剩余 **29** 个对象 | `source tools/cfenv.sh` 后逐键 `DELETE /accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets/xiaotiantian-feedback/objects/<key>`;名单已存 `/tmp/x123g6/keys_remaining.txt` |
-| 2 | 删桶 | `npx wrangler r2 bucket delete xiaotiantian-feedback`(先再列一次确认 0 条) |
-| 3 | 删重复站 | `npx wrangler pages project delete xiaotiantian-legal` —— **只删这个名字**,主站是 `xiaotiantian-app`,两个名字只差一个词,删错就没了。删完 `curl -sI https://xiaotiantian-legal.pages.dev/` 应非 200,且同一时刻主站仍 200 |
+| `xiaotiantian-legal.pages.dev/` | **200**(2802 字节) | **530**(`error code: 1016`,连查 3 次都是) |
+| `xiaotiantian-legal.pages.dev/privacy` | **200** | **530** |
+| `xiaotiantian-legal.pages.dev/terms` | **200** | **530** |
+| `xiaotiantian-legal.pages.dev/support` | **200** | **530** |
+| ☆ `xiaotiantian-app.pages.dev` 五页 | 200 | **全部 200**(同一时刻,阳性对照) |
+
+- 旧站邮箱裸词:删之前 `@126.com` **10 处**、`mailto:` **4 处**、`邮箱` **14 处**;
+  删之后 **0 命中**(页面根本取不到)。
+- `project list` 里现在只剩 `xiaotiantian-app` 一个 `xiaotiantian-*` 项目。
+- **判据措辞救了一次**:预注册写的是「**非 200**」而不是「404」。Cloudflare 对"域名没有对应项目"
+  回的是 **530**,不是 404 —— 要是当初把判据写成 404,这条绿闸会被自己判成红。
+
+# 6. (原「没做完的三件事 + 续跑命令」一节已作废)
+
+三件全部执行完毕,记录见 §5。`/Users/cc/x123/BLOCKED-G6` 已删除,改写 `DONE-G6`。
 
 # 7. 诚实边界(不清零 / 不敢说满的)
 
@@ -157,14 +196,21 @@ issue **#6** 的第一条气泡在 App 里会是**空的**。成因在 `firstPos
 ae03c1c  prereg(x123-g6): 撤图片能力 + 删重复站 —— 13 条闸先写死(含 3 条对照)、6 步顺序、2 条已知不清零
 664b9ac  feat(x123-g6)!: 后端撤掉图片能力 —— 删 upload/attach/img 三个路由 + _lib/images.js + R2 绑定;
          thread 移除 images[];正文里遗留的图行仍剥掉;单测 95→80
-(本文件) docs(x123-g6): 回执 —— 停在清桶中途的如实记账
+d5af0ed  docs(x123-g6): 回执 —— 停在清桶中途的如实记账
+c9fdeff  docs(x123-g6): README 追平 —— 顶部加颗粒 6 段,颗粒 5 整段挂「已被撤销」告警
+(本文件) docs(x123-g6): 回执收尾 —— 三件不可逆已执行(74→0 / 删桶 / 删旧站),12 绿 1 黄 0 红 0 没跑
 ```
 线上部署:`35829d09.xiaotiantian-app.pages.dev`(已是 production 别名指向的那个)。
 
-# 10. 小坑记两条
+# 10. 小坑记几条
 
 - `tools/test_feedback.mjs` 里有 3 个控制字节(NUL 等,测 `cleanLog` 用的,**本轮之前就在**),
   git 与 grep 都把它当**二进制**:`git diff` 显示 `Bin …`、`grep` 默认一条不报。
   **查这个文件必须 `grep -a`** —— 我第一次搜"有没有图片相关测试"时搜出 0 条,差点得出
   "颗粒 5 没写单测"的错结论。
-- `wrangler r2 bucket info` 的 `object_count` 滞后(报 68,真实 74),**不能当清零判据**。
+- `wrangler r2 bucket info` 的 `object_count` **滞后**,**不能当清零判据**。两次实测:
+  动手前它报 68 而真实 74;第二批删完(REST 列举已经是 0)它还在报 29。清零只认列举。
+- **「站没了」不等于 404**。Cloudflare 对"域名没有对应 Pages 项目"回 **530 / error code 1016**。
+  预注册当初写的是「非 200」才没把这条绿闸判成红 —— 下线类判据一律写成「非 200 且与在线时不同」,
+  别写死具体状态码。
+- `wrangler pages project delete` 会**交互式**问一遍,自动化里必须带 `--yes`,否则挂在提示上。
