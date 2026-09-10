@@ -60,6 +60,9 @@ import {
   gh_claudecode_20260908 as gh, ensureLabel_claudecode_20260908 as ensureLabel,
 } from '../../_lib/ghapp.js';
 
+/** 重复工单被并走时留在它自己身上的那句说明(owner 在 GitHub 上一眼看得出发生了什么) */
+const DUP_MERGED_COMMENT_20260910 = '[系统] 重复工单,已并入 #';
+
 /** 北京时间的 'YYYY-MM-DD HH:mm[:ss]'(Workers 跑在 UTC,offset 自己加) */
 function bj_claudecode_20260908(withSec) {
   const d = new Date(Date.now() + 8 * 3600 * 1000).toISOString();
@@ -214,9 +217,18 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
     }
     await ensureLabel(ghToken);
     const res = await gh(ghToken, 'POST', `/repos/${REPO}/issues`, { title, body: issueBody, labels: [LABEL] });
-    if (res.ok && res.json && res.json.number && deviceId !== '' && kv) {
-      // 锁换成真号 —— 这是唯一一条「不用把锁还回去」的出口
-      try { await kv.put('ticket:' + deviceId, String(res.json.number)); lockDevice = ''; } catch (e) {}
+    if (res.ok && res.json && res.json.number) {
+      const created = parseInt(res.json.number, 10) || 0;
+      if (deviceId !== '' && kv) {
+        // 锁换成真号 —— 这是唯一一条「不用把锁还回去」的出口
+        try { await kv.put('ticket:' + deviceId, String(created)); lockDevice = ''; } catch (e) {}
+      }
+      // ★★★ 事后收敛(见下面 reconcile 的注释):锁只降概率,这一步才保证最终收敛
+      const keep = await reconcileDeviceIssues_claudecode_20260910(
+        ghToken, deviceId, created, bodyCore, log, logLines);
+      if (keep > 0 && keep !== created && deviceId !== '' && kv) {
+        try { await kv.put('ticket:' + deviceId, String(keep)); } catch (e) {}
+      }
     }
   } catch (e) {
     // 后台链路里任何意外都到此为止:用户早就拿到 200 了,这里再抛只会污染日志
@@ -227,6 +239,54 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
       try { await kv.delete('ticket:' + lockDevice); } catch (e) {}
     }
   }
+}
+
+/**
+ * ★★★ 事后收敛:同一台设备万一开出了两条工单,把大号并进小号。
+ *
+ * ## 为什么不能只靠锁(主控 2026-09-10 当场纠正,我原来的路子是错的)
+ * KV 是**最终一致**存储,「读到空 → 写入」这两步**不是原子**的:两个并发 worker 完全
+ * 可以都读到空、都写成功。所以 #12/#13 和 #14/#15 那两次重复**不是时机没调对**,是
+ * **原语选错了** —— 再怎么把占锁往前挪,也只是把窗口做小,不可能做没。
+ * 占位锁**保留**,但它的定位从此只是「降低概率」,正确性由这一步兜底。
+ *
+ * ## 为什么选事后收敛,不选 Durable Object
+ * DO 能给真原子(免费计划现已支持 SQLite 存储的 DO),但要新增一个绑定、一套部署面和
+ * 一个新的失败模式,而这一轮刚刚把服务端往「只剩一条路由 + KV 只存一条索引」上收。
+ * 事后收敛不引入任何新基础设施,也不和「KV 不存消息」冲突,代价只是**短暂出现一条
+ * 又被关掉的重复帖**(owner 会在 GitHub 通知里看到它开、又看到它被并走)。
+ * 价签摆在这儿,owner 要真原子随时可以换 DO。
+ *
+ * ## 怎么判「谁并进谁」—— 不需要任何协调
+ * 规则是纯函数式的:**列出这台设备当前所有 open 的工单,号最小的那条留下**。
+ * 谁发现自己不是最小号,谁就把自己并进去。两个并发请求各自算一次,结论必然相同,
+ * 不需要谁通知谁 —— 这是「收敛」而不是「互斥」。
+ * ★ 用 issues 列表接口而**不是** `/search/issues`:搜索索引有几十秒延迟,刚开的单搜不到;
+ *   列表接口读的是数据库,刚开的单立刻就在。
+ *
+ * @returns {number} 最终应该用哪条工单(0 = 判不出来,调用方保持原样)
+ */
+async function reconcileDeviceIssues_claudecode_20260910(token, deviceId, created, bodyCore, log, logLines) {
+  if (deviceId === '' || created <= 0) return created;
+  const mark = deviceMark(deviceId);
+  const list = await gh(token, 'GET',
+    `/repos/${REPO}/issues?state=open&labels=${LABEL}&per_page=30&sort=created&direction=desc`, null);
+  if (!list.ok || !Array.isArray(list.json)) return created;      // 问不出来就别乱动
+  const mine = list.json
+    .filter((i) => i && !i.pull_request && typeof i.body === 'string' && i.body.includes(mark))
+    .map((i) => parseInt(i.number, 10) || 0)
+    .filter((n) => n > 0);
+  if (!mine.includes(created)) mine.push(created);
+  const keep = Math.min(...mine);
+  if (keep === created) return created;                            // 我就是小号 ⇒ 什么都不做
+
+  // 我是大号:① 把这条用户消息补到小号上 ② 在自己身上留一句说明并关掉
+  await appendUserMessage_claudecode_20260908(token, keep, bodyCore, log, logLines);
+  const base = `/repos/${REPO}/issues/${created}`;
+  await gh(token, 'POST', base + '/comments',
+    { body: DUP_MERGED_COMMENT_20260910 + keep + '(同一台设备的反馈接在同一条工单里)' });
+  await gh(token, 'PATCH', base, { state: 'closed' });
+  return keep;
 }
 
 /**
