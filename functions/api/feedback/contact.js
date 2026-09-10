@@ -63,8 +63,10 @@ import {
 /** 事后收敛前先等多久 —— GitHub 列表接口有读副本延迟,刚开的兄弟帖不是立刻可见的。
  *  这段等待跑在 waitUntil 里,用户早已拿到 200,不花他一毫秒。 */
 const RECONCILE_DELAY_MS_20260910 = 5000;
-/** 只列到自己一条时,再等这么久重列一次(还是只有一条就认了) */
-const RECONCILE_RETRY_MS_20260910 = 6000;
+/** 只列到自己一条时,再等这么久重列一次(还是只有一条就认了)。
+ *  ★ 预算:`waitUntil` 总时长上限 30 秒。最坏路径 = 5s + 5s 两段等待 + 六七次 GitHub 往返,
+ *    留了一倍余量。改大这两个数之前先把这笔账重算一遍。 */
+const RECONCILE_RETRY_MS_20260910 = 5000;
 
 /** 重复工单被并走时留在它自己身上的那句说明(owner 在 GitHub 上一眼看得出发生了什么) */
 const DUP_MERGED_COMMENT_20260910 = '[系统] 重复工单,已并入 #';
@@ -217,6 +219,15 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
         if (deviceId !== '' && kv && existing !== myIssue) {
           try { await kv.put('ticket:' + deviceId, String(existing)); lockDevice = ''; } catch (e) {}
         }
+        // ★★★ 第二层兜底(主控 2026-09-10 提):**每一条后续提交**都顺手收敛一次。
+        //   第一层(开单后等 5 秒再收敛)本质上还是在跟 GitHub 的读副本赛跑,只是把窗口挪宽,
+        //   赛输了就漏。这一层不依赖时间:哪怕上一次漏了,下一条消息到来时照样并掉 ⇒
+        //   重复帖**最多活到这台设备的下一条消息**。这里不用等(没有刚开出来的兄弟帖要等副本)。
+        const k2 = await reconcileDeviceIssues_claudecode_20260910(
+          ghToken, deviceId, existing, bodyCore, log, logLines, 0);
+        if (k2 > 0 && k2 !== existing && deviceId !== '' && kv) {
+          try { await kv.put('ticket:' + deviceId, String(k2)); } catch (e) {}
+        }
         return;
       }
       // 追加失败(issue 被删/被转成 PR 之类)⇒ 往下走,开一条新的
@@ -231,7 +242,7 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
       }
       // ★★★ 事后收敛(见下面 reconcile 的注释):锁只降概率,这一步才保证最终收敛
       const keep = await reconcileDeviceIssues_claudecode_20260910(
-        ghToken, deviceId, created, bodyCore, log, logLines);
+        ghToken, deviceId, created, bodyCore, log, logLines, RECONCILE_DELAY_MS_20260910);
       if (keep > 0 && keep !== created && deviceId !== '' && kv) {
         try { await kv.put('ticket:' + deviceId, String(keep)); } catch (e) {}
       }
@@ -272,7 +283,7 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
  *
  * @returns {number} 最终应该用哪条工单(0 = 判不出来,调用方保持原样)
  */
-async function reconcileDeviceIssues_claudecode_20260910(token, deviceId, created, bodyCore, log, logLines) {
+async function reconcileDeviceIssues_claudecode_20260910(token, deviceId, created, bodyCore, log, logLines, delayMs) {
   if (deviceId === '' || created <= 0) return created;
   const mark = deviceMark(deviceId);
 
@@ -293,7 +304,7 @@ async function reconcileDeviceIssues_claudecode_20260910(token, deviceId, create
   //   两边**都**只列到自己那一条,于是谁也没并谁。成因是 GitHub 列表接口有**读副本延迟**:
   //   刚开出来的兄弟帖不是立刻可见的。等待跑在 waitUntil 里,用户早就拿到 200 了,不花他一毫秒。
   //   只列到自己一条时再等一次重列(一次不够就认了,宁可留两条也不乱关别人的工单)。
-  await new Promise((r) => setTimeout(r, RECONCILE_DELAY_MS_20260910));
+  if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
   let mine = await listMine();
   if (mine === null) return created;
   if (mine.length <= 1) {
