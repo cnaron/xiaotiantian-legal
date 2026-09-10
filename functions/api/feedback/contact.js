@@ -113,6 +113,7 @@ export const onRequestPost = async (context) => {
  * ★ 永远不抛:`waitUntil` 里抛出去没人接,还会在 Cloudflare 面板上刷一堆异常。
  */
 async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
+  let lockDevice = '';                 // 非空 = 这一轮占着「开单中」的锁,收尾必须还回去
   try {
     // ⓪ 静默上限 —— 用户看不见(前面已经回过 200 了)。存在的唯一理由是保护免费额度:
     //    GitHub API、Workers AI neurons、KV 写次数都是有限的。数值一个没动。
@@ -122,6 +123,21 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
 
     // ① 这台设备已有的 issue(KV 索引,主路径)。读到「开单中」的锁就等一会儿再读。
     const myIssue = await deviceIssueWaitingLock(kv, deviceId);
+
+    // ①' ★★★ 占锁的时机:**紧接着这次读**,不能等到真要开单的时候。
+    //     第一版就是放在「开单前一刻」的,2026-09-10 生产实测**没挡住**(又开出 #14/#15):
+    //     占锁之前还隔着一次预审(Workers AI,几百毫秒到两秒),第二条请求早在那之前就把
+    //     `ticket:` 读成空了。窗口必须收到「读完立刻占」这一步,中间一次远程调用都不能有。
+    //     代价:后面任何一条岔路(拉黑 / 预审不过 / 测试模式 / GitHub 用不了 / 追加成功)
+    //     都必须把锁还回去 —— 统一在 finally 里做。
+    if (myIssue === 0 && deviceId !== '' && kv) {
+      try {
+        await kv.put('ticket:' + deviceId, TICKET_LOCK_PREFIX_20260910 + Date.now(),
+          { expirationTtl: TICKET_LOCK_TTL_SEC_20260910 });
+        lockDevice = deviceId;
+      } catch (e) { /* 占不上就照常往下走,最坏退回到「可能开两条」 */ }
+    }
+
     const ghTokenForGate = myIssue > 0 ? await installationToken(env, kv) : '';
 
     // ② 拉黑 —— owner 在 GitHub 上给这条 issue 贴 `blocked` 标签 ⇒ 这台设备的话不再落地。
@@ -188,32 +204,28 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
     if (existing > 0) {
       const app = await appendUserMessage_claudecode_20260908(ghToken, existing, bodyCore, log, logLines);
       if (app.ok) {
-        // 兜底搜出来的号也补进索引,下次就走主路径
+        // 兜底搜出来的号也补进索引,下次就走主路径(顺手把锁换成真号 ⇒ 不用再还)
         if (deviceId !== '' && kv && existing !== myIssue) {
-          try { await kv.put('ticket:' + deviceId, String(existing)); } catch (e) {}
+          try { await kv.put('ticket:' + deviceId, String(existing)); lockDevice = ''; } catch (e) {}
         }
         return;
       }
       // 追加失败(issue 被删/被转成 PR 之类)⇒ 往下走,开一条新的
     }
-    // ★ 开新单之前先占位(理由见 TICKET_LOCK_PREFIX_20260910 上面那段)
-    const takeLock = deviceId !== '' && kv;
-    if (takeLock) {
-      try {
-        await kv.put('ticket:' + deviceId, TICKET_LOCK_PREFIX_20260910 + Date.now(),
-          { expirationTtl: TICKET_LOCK_TTL_SEC_20260910 });
-      } catch (e) { /* 占不上就照常开,最坏退回到「可能开两条」 */ }
-    }
     await ensureLabel(ghToken);
     const res = await gh(ghToken, 'POST', `/repos/${REPO}/issues`, { title, body: issueBody, labels: [LABEL] });
-    if (takeLock) {
-      try {
-        if (res.ok && res.json && res.json.number) await kv.put('ticket:' + deviceId, String(res.json.number));
-        else await kv.delete('ticket:' + deviceId);   // 开单没成 ⇒ 把锁撤掉,别卡住这台设备
-      } catch (e) {}
+    if (res.ok && res.json && res.json.number && deviceId !== '' && kv) {
+      // 锁换成真号 —— 这是唯一一条「不用把锁还回去」的出口
+      try { await kv.put('ticket:' + deviceId, String(res.json.number)); lockDevice = ''; } catch (e) {}
     }
   } catch (e) {
     // 后台链路里任何意外都到此为止:用户早就拿到 200 了,这里再抛只会污染日志
+  } finally {
+    // ★ 还锁:除了「开单成功并写进真号」那一条出口,其余所有岔路都到这儿。
+    //   不还的话这台设备接下来 60 秒都会被自己的锁绊住(等满 3 次才放行)。
+    if (lockDevice !== '' && kv) {
+      try { await kv.delete('ticket:' + lockDevice); } catch (e) {}
+    }
   }
 }
 
