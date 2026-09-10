@@ -7,21 +7,20 @@
 // 2026-09-08 轮换过一次:上一版 key 曾被我误提交进这个公开仓库(history 里还有),
 // 现役 key 只在 Pages secret 与交接文件里。 2026.09.08 Naron
 export const RATE_WINDOW_SEC_20260908 = 600;
-export const RATE_MAX_20260908 = { contact: 5, thread: 30, reply: 5, sendlog: 60 };
+// X129-C1:thread / reply / sendlog 三条路由已下线 ⇒ 只剩 contact 一个桶。
+// ★ 这个上限现在是**静默**的:超了不再回 429,而是「照回 200,后台把这条丢掉」。
+export const RATE_MAX_20260908 = { contact: 5 };
 export const RATE_GLOBAL_DAY_20260908 = 300;
 // 主体拿不到时(比如请求体里没带设备编号)共用这一个桶 —— 宁可几个人挤一个窗口,也不回头去认 IP。
 export const RATE_SUBJECT_NONE_20260909 = 'nodev';
 export const BODY_MAX_BYTES_20260908 = 131072;      // 128 KB
-export const REPLY_BODY_MAX_BYTES_20260908 = 8192;
 export const DESC_MAX_20260908 = 200;
 export const CONTACT_MAX_20260908 = 80;
 export const META_MAX_20260908 = 64;
-export const REPLY_MAX_20260908 = 2000;
 export const LOG_MAX_BYTES_20260908 = 65536;        // 64 KB
 export const JWS_MAX_BYTES_20260908 = 32768;
 export const DEVICE_ID_MAX_20260908 = 64;
 export const GH_BODY_MAX_20260908 = 60000;
-export const USER_REPLY_PREFIX_20260908 = '[用户回复]';
 /**
  * 追加消息的前缀。
  * ★ X123 颗粒 7 去掉了井号:旧写法 `[用户消息 #2]` 里的 `#2` 会被 GitHub **自动链成
@@ -34,7 +33,6 @@ export const USER_REPLY_PREFIX_20260908 = '[用户回复]';
 export const USER_MSG_PREFIX_20260909 = '[用户消息 ';
 /** @deprecated 旧生成格式(带井号),只用于说明;匹配一律用 USER_MSG_PREFIX_20260909 */
 export const USER_MSG_PREFIX_20260908 = '[用户消息 #';
-export const SENDLOG_KEEP_SEC_20260908 = 30 * 24 * 3600;
 export const OWNER_MENTION_20260908 = '@cnaron';
 
 // ── X123 颗粒 7:issue 排版重做(owner 真机试用 issue #7 后当场提的)────────────
@@ -90,13 +88,6 @@ export function clean_claudecode_20260908(value, maxChars, singleLine) {
 export function cleanDeviceId_claudecode_20260908(v) {
   if (v === null || v === undefined || typeof v === 'object' || typeof v === 'function') return '';
   return String(v).replace(/[^0-9A-Za-z-]/g, '').slice(0, DEVICE_ID_MAX_20260908);
-}
-
-/** id 只允许:纯数字(issue 号)、q+16 进制(排队号)、t+16 进制(测试件号) */
-export function cleanId_claudecode_20260908(id) {
-  if (id === null || id === undefined || typeof id === 'object' || typeof id === 'function') return '';
-  const s = String(id).trim();
-  return (/^[0-9]{1,9}$/.test(s) || /^[qt][0-9a-f]{1,24}$/.test(s)) ? s : '';
 }
 
 export function cleanJws_claudecode_20260908(v) {
@@ -271,8 +262,10 @@ export function quoteDesc_claudecode_20260909(desc) {
 }
 
 /**
- * `quoteDesc` 的逆。整篇正文丢进来,取出用户原话;找不到锚点回 `null`
- * (调用方据此回落到旧排版的取法)。
+ * `quoteDesc` 的逆。整篇正文丢进来,取出用户原话;找不到锚点回 `null`。
+ * ★ X129-C1 起**线上没有调用方**了(thread 下线,服务端不再从 issue 往回读)。保留的理由:
+ *   它是 `quoteDesc` 的严格逆,单测靠这对往返把「写进 issue 的格式」钉死 —— 删了就只剩
+ *   「写出来长这样」,没人证明它还读得回来。
  */
 export function unquoteDesc_claudecode_20260909(body) {
   const s = String(body ?? '');
@@ -308,91 +301,17 @@ export function diagDetails_claudecode_20260909(rows, summary) {
   return '<details><summary>' + (summary || '设备与诊断信息') + '</summary>\n\n' + body + '\n\n</details>\n';
 }
 
-/**
- * 从 issue 正文里取出用户那段描述。
- * ★ 两种排版都要认(X123 颗粒 7 改版,但 #1–#7 是旧排版,thread 还要读它们):
- *   ① 新:`<!-- rc:desc:begin -->` … `<!-- rc:desc:end -->` 之间,去掉引用/大字号前缀;
- *   ② 旧:【问题描述】起、到下一个「\n【」止。
- * 两条路都取不到 ⇒ 整篇返回(宁可多给,不给空气泡)。
- */
-export function firstPostBody_claudecode_20260908(body) {
-  const marked = unquoteDesc_claudecode_20260909(body);
-  if (marked !== null) return marked;
-  const head = '【问题描述】';
-  const s = String(body ?? '');
-  const pos = s.indexOf(head);
-  if (pos < 0) return s;
-  let rest = s.slice(pos + head.length);
-  const end = rest.indexOf('\n【');
-  if (end >= 0) rest = rest.slice(0, end);
-  return rest.trim();
-}
-
-/**
- * 把正文里的 markdown 图片写法 `![alt](url)` 整段去掉,只留文字。
- *
- * ★ 作用域是**显示层清洁**,不是图片能力。X123 颗粒 6 已按 owner 令把上传/嵌图/取图三条接口
- *   和 R2 桶全部撤掉,这个函数不碰 R2、不产生 URL、也不给 App 任何图片字段 —— 它存在只因为
- *   「撤掉能力 ≠ 撤掉历史」:颗粒 5 期间开出的工单(#5 / #6)正文里**已经**写进了
- *   `![截图](https://…/api/feedback/img/…)` 这样几行字;另外 owner 在 GitHub 网页上回复时
- *   拖一张图进去也会产生同样的写法。不剥的话,App 的对话气泡里会原样冒出这一行。
- * ★ 必须在 firstPostBody / classifyComment **之前**调用:图行追加在正文最末尾,而
- *   firstPostBody 只截【问题描述】那一段 —— 顺序反了图行会被截没(这条顺序在颗粒 5 就踩过)。
- * ★ 诚实边界:只认 markdown 形式。GitHub 网页端有时生成 `<img src=...>` 的 HTML 形式,
- *   本函数**不处理**(手上没有这种样本,不为想象中的输入写代码)。
- * 2026.09.08 Naron
- */
-export function stripImageMarkdown_claudecode_20260908(body) {
-  const s = String(body ?? '');
-  // 不写成 `re.test() 再 re.replace()` —— 带 /g 的正则有 lastIndex 状态,那种写法是个经典坑
-  const out = s.replace(/!\[[^\]]*\]\([^)\s]+\)/g, '');
-  if (out === s) return s;                         // 没有图 ⇒ 逐字节原样返回
-  return out.replace(/\n{3,}/g, '\n\n').trim();
-}
-
-/** 一条评论是用户说的还是开发者说的;顺带把传输标记剥掉(标记是噪声,from 已经说清楚了) */
-export function classifyComment_claudecode_20260908(body) {
-  const s = String(body ?? '');
-  if (s.startsWith(USER_REPLY_PREFIX_20260908)) {
-    return { from: 'user', body: s.slice(USER_REPLY_PREFIX_20260908.length).replace(/^\s+/, '') };
-  }
-  // 新前缀是旧前缀的真前缀 ⇒ 这一行同时认 `[用户消息 2]`(新)和 `[用户消息 #2]`(旧)
-  if (s.startsWith(USER_MSG_PREFIX_20260909)) {
-    return { from: 'user', body: firstPostBody_claudecode_20260908(s) };
-  }
-  return { from: 'dev', body: s };
-}
-
-// ── token ─────────────────────────────────────────────────────────────
-export async function hmacHex_claudecode_20260908(secret, msg) {
-  const k = await crypto.subtle.importKey('raw', enc.encode(String(secret)),
-    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', k, enc.encode(String(msg))));
-  return [...sig].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-/** token = HMAC-SHA256(TICKET_SECRET, id) 前 32 位十六进制(与 PHP 同式) */
-export async function ticketToken_claudecode_20260908(secret, id) {
-  if (!secret) return '';
-  return (await hmacHex_claudecode_20260908(secret, id)).slice(0, 32);
-}
-
-export async function ticketTokenValid_claudecode_20260908(secret, id, token) {
-  const want = await ticketToken_claudecode_20260908(secret, id);
-  if (want === '' || typeof token !== 'string' || token === '') return false;
-  return timingSafeEqual_claudecode_20260908(want, token);
-}
-
 // ── 限流(KV 滑动窗口;同一 colo 内写后立刻可读,跨 colo 最终一致) ──────
 /**
  * ★ X123 颗粒 8(2026-09-09,owner 令「别收 IP 这种敏感信息」)—— **限流主体不再是 IP**。
  *   以前键是 `fbrate:<桶>:<IP>`,等于把每个用户的 IP 明文写进 KV 存 10 分钟;
- *   现在主体由各接口自己给:contact = App 自己生成的设备编号、reply/thread = 工单号、
- *   sendlog = 常量 `owner`(那页只有 owner 用)。**阈值与窗口一个都没动。**
+ *   现在主体 = App 自己生成的设备编号。**阈值与窗口一个都没动。**
+ * ★ X129-C1:thread / reply / sendlog 三条路由下线 ⇒ 只剩 contact 一个桶;而且这个桶
+ *   现在是**静默**的 —— 超了不回 429,是「照回 200,后台把这条丢掉」。
  * ★ 代价写在 PREREG-X123-G8.md §5:设备编号/工单号是请求体里的东西 ⇒ 限流只能挪到解析之后,
  *   JSON 坏掉的请求不再计入单主体窗口(仍被 globalDayAllow 的 300/天 计入);
  *   拿到 X-RC-Key 的人换工单号可以绕开单主体窗口(RC_KEY 在 App 二进制里,视同半公开)。
- * @param subject 主体标识:必须是已清洗过的串(cleanDeviceId / cleanId 的输出,或常量)
+ * @param subject 主体标识:必须是已清洗过的串(cleanDeviceId 的输出,或常量)
  */
 export async function rateAllow_claudecode_20260908(kv, subject, bucket, max, now = Date.now()) {
   if (!kv) return true;                          // KV 不可用时不拦真实反馈
@@ -422,36 +341,19 @@ export async function globalDayAllow_claudecode_20260908(kv, now = new Date()) {
   return true;
 }
 
-// ── 测试模式 / 发送记录 ────────────────────────────────────────────────
-/** @returns '' = 不是测试模式;否则是原因串 */
-export async function testModeReason_claudecode_20260908(request, kv) {
-  if ((request.headers.get('x-rc-test') || '') === '1') return 'X-RC-Test 头';
+// ── 测试模式 ──────────────────────────────────────────────────────────
+/**
+ * 测试模式:开着就**什么都不做**(不调 GitHub、不写任何东西)。
+ * ★ X129-C1 起签名从 `(request, kv)` 改成 `(testHeader, kv)` —— contact 在返回 200 之前
+ *   就把请求头读出来了,异步那段拿不到 `request`(那时它已经交出去了)。
+ * ★ 旧版还会存一份「测试件」到 KV 让 App 能拉对话 —— thread 已下线,那就是纯粹的存消息,已撤。
+ * @returns {boolean}
+ */
+export async function testModeReason_claudecode_20260910(testHeader, kv) {
+  if (testHeader === true) return true;
   if (kv) {
-    try { if (((await kv.get('feedback:test_mode')) || '') === 'on') return 'KV 总闸 feedback:test_mode=on'; }
+    try { return ((await kv.get('feedback:test_mode')) || '') === 'on'; }
     catch (e) { /* 读不到就当没开 */ }
   }
-  return '';
-}
-
-export async function logBodyOn_claudecode_20260908(kv) {
-  if (!kv) return true;
-  try { return ((await kv.get('feedback:log_body')) || 'on') !== 'off'; } catch (e) { return true; }
-}
-
-export function stampId_claudecode_20260908() {
-  return Date.now().toString(16) + Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
-}
-
-/** 写一行发送记录。log_body=off 时只留元信息与长度,不落正文(隐私开关) */
-export async function sendlogAppend_claudecode_20260908(kv, rec, keepBody) {
-  if (!kv) return;
-  const row = { at: new Date().toISOString(), ...rec };
-  if (!keepBody) {
-    row.bodyHead = '(已按 feedback:log_body=off 不记录,原长 ' + [...(rec.bodyHead || '')].length + ' 字)';
-    row.log = '';
-    row.diag = '(已按 feedback:log_body=off 不记录)';
-  }
-  const key = 'sendlog:' + String(Date.now()).padStart(14, '0') + '-'
-    + Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
-  try { await kv.put(key, JSON.stringify(row), { expirationTtl: SENDLOG_KEEP_SEC_20260908 }); } catch (e) {}
+  return false;
 }

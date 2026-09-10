@@ -1,10 +1,18 @@
-// 预审(词表 → Workers AI)+ 拉黑(GitHub 标签)+ 连拒自动拉黑。X123 颗粒 7。
-// 2026.09.09 Naron
+// 预审(词表 → Workers AI)+ 拉黑(GitHub 标签)。X123 颗粒 7 建,X129 颗粒 C1 收敛。
+// 2026.09.10 Naron
 //
 // 两道门,顺序是固定的,理由写在各自函数上:
-//   ① 拉黑:owner 在 GitHub 上给这台设备的工单贴 `blocked` 标签 ⇒ 它发不出新的话(403),
-//      但 **thread 照常可读**(不让被拉黑的人一脸懵)。撕掉标签最多 5 分钟恢复。
+//   ① 拉黑:owner 在 GitHub 上给这台设备的工单贴 `blocked` 标签 ⇒ 它发的话不再落地。
+//      撕掉标签最多 5 分钟恢复。
 //   ② 预审:词表命中直接拒;词表放过的再交给 Workers AI 看一眼。
+//
+// ★★★ X129-C1 的两处收敛(owner 改口径:用户只管发,我们不作响应处理):
+//   ① 两道门现在都跑在 **contact 返回 200 之后**的异步段里,拦下来 = **静默丢弃**
+//      —— 不回 400/403、不开单、不留任何记录。用户感知不到自己被拦了(owner 明确要的)。
+//   ② **「连拒 3 次自动拉黑」整个撤掉**,KV 上那把 `block:<deviceId>` 锁一并撤:
+//      自动拉黑要在 KV 里记「这台设备被拒过几次」,而这一轮 KV 不留任何过程记录。
+//      拉黑现在**只有一条路**:owner 在 GitHub 上给这台设备的 issue 贴 `blocked` 标签。
+//      代价:一台还没开过 issue 的设备**拉黑不了**(它在 GitHub 上没有可贴标签的对象)。
 //
 // ★★★ 「AI 坏了要放行」这条是**故意的**,不是偷懒:审核服务抽风时把正常用户的求助拦在门外,
 //   代价远大于漏掉一句脏话(漏掉的那句 owner 自己在 GitHub 上看得到,还能手动拉黑)。
@@ -14,9 +22,6 @@ import { matchWords_claudecode_20260909, MOD_CATEGORIES_20260909 } from './moder
 
 export const BLOCK_LABEL_20260909 = 'blocked';
 export const LABELS_CACHE_SEC_20260909 = 300;              // 5 分钟(= 解封最长生效时间)
-export const REJECT_TTL_SEC_20260909 = 30 * 24 * 3600;     // 拒绝计数保留 30 天
-export const REJECT_BLOCK_AT_20260909 = 3;                 // 拒到第几次自动拉黑
-export const AUTO_BLOCK_COMMENT_20260909 = '[系统] 因多次提交违规内容已自动屏蔽';
 
 export const AI_MODEL_20260909 = '@cf/meta/llama-guard-3-8b';
 export const AI_TIMEOUT_MS_20260909 = 3000;
@@ -92,13 +97,9 @@ export async function issueLabels_claudecode_20260909(kv, ghToken, issue, force 
  * @returns {{blocked:boolean, why:string}}
  */
 export async function isBlocked_claudecode_20260909(kv, ghToken, { deviceId = '', issue = 0 } = {}) {
-  // ① 没开过工单也能被拉黑(连拒 3 次时工单还不存在)⇒ KV 上单独一把锁
-  if (kv && deviceId !== '') {
-    try {
-      if (((await kv.get('block:' + deviceId)) || '') !== '') return { blocked: true, why: 'kv block:' + deviceId };
-    } catch (e) { /* 读不到就往下走 */ }
-  }
-  // ② 正路:看这条 issue 的标签
+  // ★ X129-C1:只看 GitHub 标签这**一条**路。KV 上那把 `block:<deviceId>` 锁撤了
+  //   (它是「连拒自动拉黑」的产物,而自动拉黑要在 KV 里记过程,已随这一轮一起撤)。
+  //   `deviceId` 形参保留:调用方现有的写法不用改,将来要恢复设备级拉黑也有位置。
   if (issue > 0) {
     const labels = await issueLabels_claudecode_20260909(kv, ghToken, issue);
     if (labels && labels.includes(BLOCK_LABEL_20260909)) {
@@ -237,58 +238,6 @@ export async function moderate_claudecode_20260909(ai, text) {
   return { ok: true, src: '', cat: '', detail: '', aiState: 'ok', aiReason: '', wordMs, aiMs: a.ms };
 }
 
-// ── 拒绝计数 / 自动拉黑 ────────────────────────────────────────────────
-/**
- * 记一次拒绝,够数就自动拉黑。
- *
- * ★ 计数主体:有 `deviceId` 就按设备;**没有就按工单号**(键 `i<issue>`)。
- *   为什么会没有:`reply` 的请求体里没有 deviceId(契约是颗粒 2 定的,这一轮不改契约)。
- *   两种主体的计数**不合并** —— 合并需要一次 GitHub 往返去查工单属于哪台设备,
- *   为了一个计数器每次拒绝都多打一次 API 不值。差异登记在预注册 §1 F3。
- *
- * @returns {{count:number, autoBlocked:boolean, how:string}}
- */
-export async function noteRejection_claudecode_20260909(kv, ghToken, { deviceId = '', issue = 0 } = {}) {
-  const subject = deviceId !== '' ? deviceId : (issue > 0 ? 'i' + issue : '');
-  if (!kv || subject === '') return { count: 0, autoBlocked: false, how: '无主体可计数' };
-
-  const key = 'rej:' + subject;
-  let n = 0;
-  try { n = parseInt((await kv.get(key)) || '0', 10) || 0; } catch (e) { n = 0; }
-  n += 1;
-  try { await kv.put(key, String(n), { expirationTtl: REJECT_TTL_SEC_20260909 }); } catch (e) {}
-  if (n < REJECT_BLOCK_AT_20260909) return { count: n, autoBlocked: false, how: '' };
-
-  // 够数了 —— 有工单就贴标签 + 留一句系统说明;没工单就在 KV 上落一把锁
-  if (issue > 0 && ghToken) {
-    await ensureBlockLabel_claudecode_20260909(ghToken);
-    const add = await gh(ghToken, 'POST', `/repos/${REPO}/issues/${issue}/labels`, { labels: [BLOCK_LABEL_20260909] });
-    // ★ 贴完必须**强制刷新**这条 issue 的标签缓存:否则自己刚贴的标签,5 分钟内自己看不见
-    await issueLabels_claudecode_20260909(kv, ghToken, issue, true);
-    let commented = false;
-    if (add.ok) {
-      const c = await gh(ghToken, 'POST', `/repos/${REPO}/issues/${issue}/comments`, { body: AUTO_BLOCK_COMMENT_20260909 });
-      commented = c.ok;
-    }
-    if (deviceId !== '' ) {
-      try { await kv.put('block:' + deviceId, '1', { expirationTtl: REJECT_TTL_SEC_20260909 }); } catch (e) {}
-    }
-    return {
-      count: n, autoBlocked: add.ok,
-      how: add.ok ? ('已给 issue #' + issue + ' 贴 ' + BLOCK_LABEL_20260909 + (commented ? ' + 留系统说明' : ' (说明没写上)'))
-        : ('贴标签失败 status=' + add.status + ' ' + add.err),
-    };
-  }
-  if (deviceId !== '') {
-    try { await kv.put('block:' + deviceId, '1', { expirationTtl: REJECT_TTL_SEC_20260909 }); } catch (e) {}
-    return { count: n, autoBlocked: true, how: '这台设备还没有工单 ⇒ 锁在 KV block:' + deviceId };
-  }
-  return { count: n, autoBlocked: false, how: '既没设备号也没工单号,拉黑不了' };
-}
-
-/** `blocked` 标签不存在就建(已存在 GitHub 回 422,当成功)。失败不阻断贴标签本身。 */
-export async function ensureBlockLabel_claudecode_20260909(token) {
-  await gh(token, 'POST', `/repos/${REPO}/labels`, {
-    name: BLOCK_LABEL_20260909, color: 'b60205', description: '这台设备的反馈一律拒收(X123 颗粒 7)',
-  });
-}
+// ── 拒绝计数 / 自动拉黑:X129-C1 已整段撤除 ────────────────────────────
+// 撤掉的是 `noteRejection_claudecode_20260909` / `ensureBlockLabel_claudecode_20260909`
+// 与 `rej:<主体>` / `block:<deviceId>` 两类 KV 键。理由见本文件顶部 ★★★ 那段。
