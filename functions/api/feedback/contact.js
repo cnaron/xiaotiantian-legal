@@ -60,6 +60,12 @@ import {
   gh_claudecode_20260908 as gh, ensureLabel_claudecode_20260908 as ensureLabel,
 } from '../../_lib/ghapp.js';
 
+/** 事后收敛前先等多久 —— GitHub 列表接口有读副本延迟,刚开的兄弟帖不是立刻可见的。
+ *  这段等待跑在 waitUntil 里,用户早已拿到 200,不花他一毫秒。 */
+const RECONCILE_DELAY_MS_20260910 = 5000;
+/** 只列到自己一条时,再等这么久重列一次(还是只有一条就认了) */
+const RECONCILE_RETRY_MS_20260910 = 6000;
+
 /** 重复工单被并走时留在它自己身上的那句说明(owner 在 GitHub 上一眼看得出发生了什么) */
 const DUP_MERGED_COMMENT_20260910 = '[系统] 重复工单,已并入 #';
 
@@ -269,14 +275,33 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
 async function reconcileDeviceIssues_claudecode_20260910(token, deviceId, created, bodyCore, log, logLines) {
   if (deviceId === '' || created <= 0) return created;
   const mark = deviceMark(deviceId);
-  const list = await gh(token, 'GET',
-    `/repos/${REPO}/issues?state=open&labels=${LABEL}&per_page=30&sort=created&direction=desc`, null);
-  if (!list.ok || !Array.isArray(list.json)) return created;      // 问不出来就别乱动
-  const mine = list.json
-    .filter((i) => i && !i.pull_request && typeof i.body === 'string' && i.body.includes(mark))
-    .map((i) => parseInt(i.number, 10) || 0)
-    .filter((n) => n > 0);
-  if (!mine.includes(created)) mine.push(created);
+
+  /** 列一次「这台设备当前所有 open 的工单」。用列表接口而不是 /search/issues:搜索索引有几十秒延迟。 */
+  const listMine = async () => {
+    const list = await gh(token, 'GET',
+      `/repos/${REPO}/issues?state=open&labels=${LABEL}&per_page=30&sort=created&direction=desc`, null);
+    if (!list.ok || !Array.isArray(list.json)) return null;       // 问不出来 ⇒ null,调用方别乱动
+    const ns = list.json
+      .filter((i) => i && !i.pull_request && typeof i.body === 'string' && i.body.includes(mark))
+      .map((i) => parseInt(i.number, 10) || 0)
+      .filter((n) => n > 0);
+    if (!ns.includes(created)) ns.push(created);
+    return ns;
+  };
+
+  // ★★★ 先等一会儿再看 —— 2026-09-10 真并发实测(两条 curl 同时发)开出 #19/#20,
+  //   两边**都**只列到自己那一条,于是谁也没并谁。成因是 GitHub 列表接口有**读副本延迟**:
+  //   刚开出来的兄弟帖不是立刻可见的。等待跑在 waitUntil 里,用户早就拿到 200 了,不花他一毫秒。
+  //   只列到自己一条时再等一次重列(一次不够就认了,宁可留两条也不乱关别人的工单)。
+  await new Promise((r) => setTimeout(r, RECONCILE_DELAY_MS_20260910));
+  let mine = await listMine();
+  if (mine === null) return created;
+  if (mine.length <= 1) {
+    await new Promise((r) => setTimeout(r, RECONCILE_RETRY_MS_20260910));
+    const again = await listMine();
+    if (again !== null) mine = again;
+  }
+  if (mine.length <= 1) return created;
   const keep = Math.min(...mine);
   if (keep === created) return created;                            // 我就是小号 ⇒ 什么都不做
 
