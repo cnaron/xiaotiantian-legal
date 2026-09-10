@@ -46,11 +46,12 @@ import {
   diagDetails_claudecode_20260909 as diagDetails,
   rateAllow_claudecode_20260908 as rateAllow, globalDayAllow_claudecode_20260908 as globalDayAllow,
   testModeReason_claudecode_20260910 as testModeReason,
+  TICKET_LOCK_PREFIX_20260910, TICKET_LOCK_TTL_SEC_20260910,
+  deviceIssueWaitingLock_claudecode_20260910 as deviceIssueWaitingLock,
 } from '../../_lib/feedback.js';
 import { jwsInspect_claudecode_20260908 as jwsInspect } from '../../_lib/applejws.js';
 import {
   isBlocked_claudecode_20260909 as isBlocked,
-  deviceIssue_claudecode_20260909 as deviceIssue,
   moderate_claudecode_20260909 as moderate,
 } from '../../_lib/moderation.js';
 import {
@@ -119,8 +120,8 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
     const deviceId = cleanDeviceId(data.deviceId);
     if (!(await rateAllow(kv, deviceId || RATE_SUBJECT_NONE_20260909, 'contact', RATE_MAX_20260908.contact))) return;
 
-    // ① 这台设备已有的 issue(KV 索引,主路径)
-    const myIssue = await deviceIssue(kv, deviceId);
+    // ① 这台设备已有的 issue(KV 索引,主路径)。读到「开单中」的锁就等一会儿再读。
+    const myIssue = await deviceIssueWaitingLock(kv, deviceId);
     const ghTokenForGate = myIssue > 0 ? await installationToken(env, kv) : '';
 
     // ② 拉黑 —— owner 在 GitHub 上给这条 issue 贴 `blocked` 标签 ⇒ 这台设备的话不再落地。
@@ -195,10 +196,21 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
       }
       // 追加失败(issue 被删/被转成 PR 之类)⇒ 往下走,开一条新的
     }
+    // ★ 开新单之前先占位(理由见 TICKET_LOCK_PREFIX_20260910 上面那段)
+    const takeLock = deviceId !== '' && kv;
+    if (takeLock) {
+      try {
+        await kv.put('ticket:' + deviceId, TICKET_LOCK_PREFIX_20260910 + Date.now(),
+          { expirationTtl: TICKET_LOCK_TTL_SEC_20260910 });
+      } catch (e) { /* 占不上就照常开,最坏退回到「可能开两条」 */ }
+    }
     await ensureLabel(ghToken);
     const res = await gh(ghToken, 'POST', `/repos/${REPO}/issues`, { title, body: issueBody, labels: [LABEL] });
-    if (res.ok && res.json && res.json.number && deviceId !== '' && kv) {
-      try { await kv.put('ticket:' + deviceId, String(res.json.number)); } catch (e) {}
+    if (takeLock) {
+      try {
+        if (res.ok && res.json && res.json.number) await kv.put('ticket:' + deviceId, String(res.json.number));
+        else await kv.delete('ticket:' + deviceId);   // 开单没成 ⇒ 把锁撤掉,别卡住这台设备
+      } catch (e) {}
     }
   } catch (e) {
     // 后台链路里任何意外都到此为止:用户早就拿到 200 了,这里再抛只会污染日志

@@ -357,3 +357,43 @@ export async function testModeReason_claudecode_20260910(testHeader, kv) {
   }
   return false;
 }
+
+// ── 「开单中」占位锁(X129-C1)────────────────────────────────────────
+/**
+ * ★★★ 「开单中」占位锁 —— X129-C1 实测逼出来的,不是想象中的问题。
+ *
+ * 立刻回 200 之后,用户连点两下(或 App 重试)会有**两个后台任务同时在跑**;
+ * 旧版是同步的,第二次请求必然排在第一次之后,`ticket:<deviceId>` 早写好了。
+ * 2026-09-10 首次生产实测:两条相隔约 1 秒的提交**开出了两个 issue(#12 / #13)**
+ * —— 第二条读 `ticket:` 时第一条还没写完,GitHub 搜索兜底又有几十秒索引延迟,救不了。
+ *
+ * 处置:开新 issue 之前先把这把锁写进**同一个键**(值是 `lock:<时间戳>`,不是数字,
+ * 所以老读法自然读成 0),开完再用真 issue 号覆盖;开单失败就把键删掉,别让这台设备
+ * 卡满 TTL。看见锁的那一方等一会儿再读。
+ *
+ * ★ 诚实边界:KV 跨 colo 是**最终一致**的,这把锁只挡得住「同一个 colo 里的连点」,
+ *   挡不住两台机房同时开单。它是**缓解**不是**互斥** —— 要真互斥得上 Durable Objects,
+ *   为一个「用户手抖点两下」的场景不值。登记在回执。
+ */
+export const TICKET_LOCK_PREFIX_20260910 = 'lock:';
+export const TICKET_LOCK_TTL_SEC_20260910 = 60;
+export const TICKET_LOCK_WAIT_MS_20260910 = 1500;
+export const TICKET_LOCK_TRIES_20260910 = 3;
+
+/**
+ * 读这台设备的 issue 号;读到「开单中」就等一会儿重读。
+ * @param waitMs 每次重读之间等多久(单测把它调到 1ms;线上不传)
+ * @returns {number} 0 = 没有(或者等到最后那一方也没写出来 ⇒ 放行去开单)
+ */
+export async function deviceIssueWaitingLock_claudecode_20260910(kv, deviceId, waitMs = TICKET_LOCK_WAIT_MS_20260910) {
+  if (!kv || deviceId === '') return 0;
+  for (let i = 0; i <= TICKET_LOCK_TRIES_20260910; i++) {
+    let raw = '';
+    try { raw = (await kv.get('ticket:' + deviceId)) || ''; } catch (e) { return 0; }
+    if (raw === '') return 0;
+    if (!raw.startsWith(TICKET_LOCK_PREFIX_20260910)) return parseInt(raw, 10) || 0;
+    if (i === TICKET_LOCK_TRIES_20260910) return 0;      // 锁一直没解开 ⇒ 当它死了,照常开单
+    await new Promise((r) => setTimeout(r, waitMs));   // waitMs 只为单测能调快,线上永远用默认值
+  }
+  return 0;
+}

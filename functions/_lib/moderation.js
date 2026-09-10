@@ -109,11 +109,9 @@ export async function isBlocked_claudecode_20260909(kv, ghToken, { deviceId = ''
   return { blocked: false, why: '' };
 }
 
-/** contact 走的是 KV 映射(`ticket:<deviceId>`),不查 GitHub 搜索 —— 搜索有几十秒延迟,挡不了实时提交 */
-export async function deviceIssue_claudecode_20260909(kv, deviceId) {
-  if (!kv || deviceId === '') return 0;
-  try { return parseInt((await kv.get('ticket:' + deviceId)) || '0', 10) || 0; } catch (e) { return 0; }
-}
+// `deviceIssue_claudecode_20260909`(按 `ticket:<deviceId>` 读工单号)已挪进 contact.js,
+// 改名 `deviceIssueWaitingLock_claudecode_20260910` —— 它现在还要处理「开单中」的占位锁,
+// 而那把锁是 contact 自己的事,放在预审/拉黑这个文件里名不副实。 2026.09.10 Naron
 
 // ── 预审 ──────────────────────────────────────────────────────────────
 /**
