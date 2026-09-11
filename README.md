@@ -309,6 +309,22 @@ iOS 应用「小天天练跳绳」(App ID `com.playtime.ropecounter`)的**公开
 这也是 owner 日后在 Cloudflare 里「Connect to Git」时能安全自动发布的前提
 (输出目录填 `docs`)。
 
+## 反馈接口契约现状(X129-C1 起,单向;X132-B 补记「当前默认值」)
+
+`POST /api/feedback/contact` 是新契约(2026-09-10 起)—— 立即回 `{"ok":true}`,不给工单号/token,
+用户**只能发,收不到回复**;`thread` / `reply` / `sendlog` 三条路由已下线。以下两条是**当前实现的
+默认值**,不是写死不能改的规则,owner 想改随时可以:
+
+- **KV 只留一种反馈相关键**:`ticket:<deviceId>` → GitHub issue 号(用于把同一设备的多次反馈接进
+  同一条工单)。没有消息正文、没有发送记录留在 KV 里。
+- **静默上限**(超限一律照回 200,用户无感知):全站 **300/天**、单设备 **5 次/10 分钟**。
+  改法:改 `functions/_lib/feedback.js` 里的 `RATE_GLOBAL_DAY_20260908` /
+  `RATE_MAX_20260908.contact` 两个常量后重新部署。
+
+完整背景、诚实边界与并发收敛机制见 [`RECEIPT-X129-C1.md`](./RECEIPT-X129-C1.md) §3/§8。
+法律站三页(support/privacy/terms)的「回复」「工作日」措辞已在 X132-B(2026-09-11)统一改成
+「只接收、不逐一回复」,不再与上面这条单向契约冲突,详见 [`RECEIPT-X132-B.md`](./RECEIPT-X132-B.md)。
+
 ## 约定
 
 - **纯静态、零脚本、零外域**:公开页没有 JavaScript、没有统计 / 广告 / 第三方资源、不设置 Cookie。
