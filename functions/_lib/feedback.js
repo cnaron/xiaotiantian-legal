@@ -40,6 +40,10 @@ export const OWNER_MENTION_20260908 = '@cnaron';
 // owner 在 GitHub 通知列表上**看不到用户到底说了什么**。新排版:标题 = 用户原话,
 // 正文第一屏 = 用户原话(引用块 + 大字号),所有抓来的元数据收进折叠块。
 export const TITLE_MAX_20260909 = 60;                 // 标题取原话前 60 字,超了加「…」
+// X132-E2(owner 验收反馈,09-11):标题只看到内容看不出是什么时候发的 ⇒ 末尾统一加时间戳。
+// GitHub issue 标题的硬上限(不是我们自己那条 60 字美观线,是 GitHub 真正的接口上限)。
+// 时间戳优先级最高,永远不许被截:算 desc 可用长度时先减掉时间戳的字符数。 2026.09.11 Naron
+export const GH_TITLE_HARD_MAX_20260911 = 256;
 export const DESC_MARK_BEGIN_20260909 = '<!-- rc:desc:begin -->';
 export const DESC_MARK_END_20260909 = '<!-- rc:desc:end -->';
 export const DESC_QUOTE_PREFIX_20260909 = '> ';       // 每行都加
@@ -229,12 +233,27 @@ export function logDetails_claudecode_20260908(log, lines, budget) {
 /**
  * 标题 = 用户原话。换行折成空格(GitHub 标题是单行),超过 60 字截断加「…」。
  * 空串进来回一个兜底串 —— GitHub 不收空标题,而 `desc` 理论上已被上游挡住,这里只是不让它炸。
+ *
+ * ★★★ X132-E2(owner 验收反馈,09-11)—— 标题末尾统一带北京时间戳 ` · YYYY-MM-DD HH:mm`:
+ *   · `dateStr` 由调用方传入(已经是格式化好的 `YYYY-MM-DD HH:mm`,这个函数不管时区/格式,
+ *     只管拼接),首条与追加条**用同一个函数、同一条拼接规则**,不会走出两套格式。
+ *   · **只在 `desc` 非空(走原话当标题)这条分支拼时间戳**——`fallback` 分支(空描述兜底)
+ *     本来就是 `'[反馈] ' + 当次时间`,已经带了日期,这里不重复拼一次。
+ *   · **时间戳优先级最高,不许被截**:可用给 desc 的字符数 = `min(60 字美观线,
+ *     256 字 GitHub 硬上限 − 时间戳长度)`,即使有一天 60 那条线被调大,也不会顶到 256
+ *     把时间戳挤掉。
+ *   · `dateStr` 不传(旧的两参数调用)时不拼时间戳,行为与改前逐字节相同——纯截断逻辑的
+ *     单测因此不用跟着改。
+ * 2026.09.11 Naron
  */
-export function titleFromDesc_claudecode_20260909(desc, fallback) {
+export function titleFromDesc_claudecode_20260909(desc, fallback, dateStr) {
   const one = String(desc ?? '').replace(/\s+/g, ' ').trim();
   if (one === '') return String(fallback ?? '(用户未填写描述)');
+  const suffix = dateStr ? (' · ' + String(dateStr)) : '';
+  const budget = Math.max(0, Math.min(TITLE_MAX_20260909, GH_TITLE_HARD_MAX_20260911 - [...suffix].length));
   const chars = [...one];
-  return chars.length <= TITLE_MAX_20260909 ? one : chars.slice(0, TITLE_MAX_20260909).join('') + '…';
+  const base = chars.length <= budget ? one : chars.slice(0, budget).join('') + '…';
+  return base + suffix;
 }
 
 /**

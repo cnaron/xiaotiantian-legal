@@ -203,7 +203,10 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
     const log = cleanLog(data.log);
     const logLines = log === '' ? 0 : log.split('\n').length;
 
-    const title = titleFromDesc(desc, '[反馈] ' + bj_claudecode_20260908(false));
+    // ★★★ X132-E2:只算一次「这次请求的北京时间」,fallback(空描述兜底串)与标题末尾的
+    //   时间戳共用同一个值——避免两处各自调一次 Date.now() 出现同一条标题里日期对不上的怪事。
+    const nowBj = bj_claudecode_20260908(false);
+    const title = titleFromDesc(desc, '[反馈] ' + nowBj, nowBj);
     const member = memberPlanText(data.plan, data.payment, data.devOverridePlan);
     const diagRows = [
       ['App 版本', (version !== '' ? version : '-') + ' (build ' + (build !== '' ? build : '-') + ')'],

@@ -334,6 +334,16 @@ iOS 应用「小天天练跳绳」(App ID `com.playtime.ropecounter`)的**公开
 (评论已经落地、用户已经拿到 200,不会因为改标题失败而回滚或报错)。代码在
 `functions/api/feedback/contact.js` 的 `retitleIssue_claudecode_20260911`。
 
+**★ X132-E2(2026-09-11,owner 验收反馈补一刀)—— 标题末尾统一带北京时间戳**:
+`titleFromDesc(desc, fallback, dateStr)` 第三参传了 `dateStr`(格式 `YYYY-MM-DD HH:mm`)时,
+`desc` 非空那条分支会在末尾拼 ` · <dateStr>`;`fallback` 分支(空描述兜底)不重复拼,
+因为 `fallback` 自己就是 `'[反馈] ' + 当次时间`。首条与追加**用同一个函数、同一条拼接规则**,
+且同一次请求里 fallback 与末尾时间戳共用同一个 `nowBj`,不会出现同一条标题里两个日期对不上
+的怪事。**时间戳优先级最高,不许被截**:desc 部分可用字符数 =
+`min(60 字美观线, 256 字 GitHub 硬上限 − 时间戳长度)`,60 远小于 256,所以实际生产里
+永远是那条 60 字线在生效,256 只是给公式本身留的安全边界(常量
+`GH_TITLE_HARD_MAX_20260911`)。
+
 ## 约定
 
 - **纯静态、零脚本、零外域**:公开页没有 JavaScript、没有统计 / 广告 / 第三方资源、不设置 Cookie。

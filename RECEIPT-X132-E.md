@@ -174,3 +174,127 @@ Cloudflare Pages 的密文 secret,本条执行线按纪律不该也拿不到它�
 - 部署:`npx wrangler pages deploy` → `https://801248f0.xiaotiantian-app.pages.dev`
   (生产别名 `xiaotiantian-app.pages.dev`)
 - 哨兵:`/Users/cc/x132/DONE-E`
+
+---
+
+## 七、X132-E2 追加(owner 验收反馈,09-11)—— 标题末尾统一带北京时间戳
+
+### 大白话
+
+1. Owner 验收时反馈:标题确实变成了最新一条留言(issue #26 的例子),但**看不出这条留言
+   是什么时候发的**,要求末尾统一补一个北京时间戳。
+2. 格式定成 ` · YYYY-MM-DD HH:mm`,首条和追加条都要有 —— 首条原来走"用户原话当标题"
+   这条分支时是没有时间的(只有描述为空走兜底串那条分支才带时间),这次把这个不一致也补齐了。
+3. 兜底串那条分支(空描述)本来就已经带了时间(`[反馈] <当次时间>`),这次**没有**再叠一次,
+   否则会变成同一条标题里出现两段日期。
+4. Owner 特别提醒"256 字上限时先截 desc 再拼时间戳,时间戳不许被截掉"——已经照办:时间戳
+   的字符预算优先分配,desc 部分该截多少字,是用"美观线(60 字)"和"GitHub 硬上限(256 字)
+   减去时间戳长度"两者取较小值算出来的,时间戳这半句永远完整。
+5. 在同一个 test 标签演练机制上,把首条和追加各跑了一次,GitHub 回读的标题末尾都能看到
+   正确的时间;单测新增 13 条(197→210,全绿);已重新部署到生产。
+
+### 改法(`functions/_lib/feedback.js` + `functions/api/feedback/contact.js`)
+
+- `titleFromDesc_claudecode_20260909` 新增第三个参数 `dateStr`(格式化好的
+  `YYYY-MM-DD HH:mm`,函数本身不管时区/格式,只管拼接):
+  - `desc` 非空(原话当标题)分支:末尾拼 `' · ' + dateStr`。
+  - `desc` 为空走 `fallback` 分支:**不拼**——`fallback` 传进来的时候已经是
+    `'[反馈] ' + 当次时间`,重复拼会变成两段日期。
+  - `dateStr` 不传(旧的两参数调用,单测里保留了一批这样的调用)⇒ 不拼时间戳,
+    纯截断行为与改前逐字节相同,不需要跟着改。
+  - 新增导出常量 `GH_TITLE_HARD_MAX_20260911 = 256`(GitHub 标题真正的硬上限)。
+    desc 部分的可用字符预算 = `min(TITLE_MAX_20260909(60), GH_TITLE_HARD_MAX_20260911(256)
+    − 时间戳字符数)`——时间戳永远不参与被截的那一半,60 这条线在生产环境永远先触发
+    (60 + 时间戳约 19 字 ≈ 79,远小于 256),256 那条线是给公式本身留的安全边界,
+    不是"现在真的会用到"的场景,但按 owner 的要求把它钉进了算法里。
+- `contact.js` 里原来的 `const title = titleFromDesc(desc, '[反馈] ' + bj_claudecode_20260908(false));`
+  改成:
+  ```js
+  const nowBj = bj_claudecode_20260908(false);
+  const title = titleFromDesc(desc, '[反馈] ' + nowBj, nowBj);
+  ```
+  只算一次 `nowBj`,`fallback` 前缀与标题末尾的时间戳共用同一个值 —— 避免同一条标题里
+  两处各自调一次 `Date.now()` 导致日期对不上的怪事(哪怕概率很低,也不该让它有出现的机会)。
+  首条(`existing === 0` 创建新 issue)和追加(`existing > 0`)两条路径共用这同一个
+  `title` 变量,所以这条改动**自动**同时覆盖了首条与追加,不需要分别改两处。
+
+### 单测(`node tools/test_feedback.mjs`,新增第 ⑰ 节 + 修一处随改动过期的第 ⑯ 节断言)
+
+```
+合计 210 条:通过 210,失败 0
+```
+
+- 第 ⑯ 节里原来那条"首条标题赋值逐字节未变"的回归断言,因为这次改动本身就是要改这一行
+  (加时间戳),继续按老断言判就会永远红。改成断言"仍然是 `titleFromDesc` + 同一条
+  `'[反馈] ' + nowBj, nowBj` 三参数调用",钉的是"函数与 fallback 规则没变、首条追加共用
+  同一次 `nowBj`"这条不变量,不是文字逐字节相同这件事本身(那件事本轮就是要被改掉的)。
+- 新增第 ⑰ 节(13 条),覆盖:基本拼接、`fallback` 分支不重复拼(带阴性对照)、
+  超长 desc 时时间戳保留在末尾且截断仍正常发生、256 字硬上限下时间戳完整不被截(带公式
+  边界测试)、`nowBj` 只算一次的源码级证据。
+
+`node --check functions/_lib/feedback.js` / `functions/api/feedback/contact.js` /
+`tools/test_feedback.mjs` 均通过;`node tools/test_render.mjs` 46/46 依旧全绿。
+
+### 演练(GitHub API 真实调用,test 标签,首条 + 追加各一次)
+
+同样因为拿不到 `RC_KEY`,复用 §三 的演练方式(直接 `import` 生产代码里的
+`titleFromDesc` / `gh_claudecode_20260908`,不是重写一套等价逻辑)。
+
+**issue**:[cnaron/rope-counter#28](https://github.com/cnaron/rope-counter/issues/28)
+(已关闭,仅剩 `test` 标签)
+
+| 步骤 | 标题(GitHub 回读) | 以时间戳结尾? |
+|---|---|---|
+| 首条 | `【X132-E2 演练】首条:计数在深蹲跳时漏了两下 · 2026-09-11 15:55` | ✅ |
+| 追加(PATCH 后) | `【X132-E2 演练,同设备追加】补充:是最后一组漏的,前两组是准的 · 2026-09-11 15:55` | ✅ |
+
+两条时间戳这次落在同一分钟内(演练间隔只有 1.2 秒,精度是分钟级),没能演示出"两条时间戳
+数值不同"这件事本身——但代码逻辑上首条和追加各自调用一次 `bj_claudecode_20260908(false)`,
+只要相隔跨过分钟边界就会不同,这条留在诚实栏里如实记录,不假装演练出了"数值不同"。
+
+### 部署
+
+```
+source tools/cfenv.sh && npx wrangler pages deploy
+```
+
+```
+✨ Deployment complete! Take a peek over at https://71fdb45f.xiaotiantian-app.pages.dev
+```
+
+部署后探测(与 §四 同样的边界,只能证明 Functions bundle 正常、没有让 Worker 崩掉):
+
+```
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://xiaotiantian-app.pages.dev/api/feedback/contact \
+  -H "Content-Type: application/json" -d '{"desc":"probe-e2"}'
+→ 403
+```
+
+### 诚实栏(X132-E2 这次新增的边界)
+
+1. **演练里首条与追加的时间戳数值相同**(都在同一分钟内),没有直接演示出"两条留言的
+   时间戳数值不一样"——这是演练节奏太快(1.2 秒间隔,精度是分钟)导致的,不是代码逻辑的
+   缺陷:`bj_claudecode_20260908(false)` 精度到分钟,首条和追加各自独立调用一次,
+   只要请求发生在不同分钟就会不同。单测第 ⑰ 节里用两个不同的 `dateStr` 字面量直接验证了
+   "首条追加各用各的时间戳"这条逻辑本身,演练只是补一个真实 API 上的存在性证据,
+   没有也不需要覆盖"数值必须不同"这一条(那条本来就不是恒成立的断言 —— 同一分钟内连发
+   两条,时间戳数值相同是正确行为,不是 bug)。
+2. **256 字硬上限的测试是公式边界测试,不是复现线上真实会命中的场景**:60 字美观线在
+   生产环境永远比 256 字硬上限先触发(60+19≈79 远小于 256),所以"256 字上限生效"这条
+   分支在当前参数下**从未在真实请求里被触发过**,单测里是用假想的"美观线被调大"场景直接
+   量 `budget` 公式本身,证明公式写对了,不是证明"线上真的发生过因为太长被 256 那条线
+   接住"这件事(那件事在当前 60 的取值下不可能发生)。
+3. 本轮唯一新增的仓库痕迹:真 issue [#28](https://github.com/cnaron/rope-counter/issues/28),
+   已关闭 + 打 `test` 标签。收工时 `open` 状态的 issue 依旧一个没碰。
+
+### 产出清单(X132-E2 增量)
+
+- `functions/_lib/feedback.js` — `titleFromDesc_claudecode_20260909` 新增第三参
+  `dateStr`;新增导出常量 `GH_TITLE_HARD_MAX_20260911`
+- `functions/api/feedback/contact.js` — `title` 赋值改三参数调用,复用同一个 `nowBj`
+- `tools/test_feedback.mjs` — 新增第 ⑰ 节(13 条),修第 ⑯ 节一条过期断言;
+  197 → 210 条,全绿
+- `README.md` — 「X132-E」小节后追加「X132-E2」小节
+- `RECEIPT-X132-E.md` — 本节(§七)
+- 部署:`npx wrangler pages deploy` → `https://71fdb45f.xiaotiantian-app.pages.dev`
+- 哨兵:`/Users/cc/x132/DONE-E2`
