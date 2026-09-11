@@ -71,6 +71,30 @@ const RECONCILE_RETRY_MS_20260910 = 5000;
 /** 重复工单被并走时留在它自己身上的那句说明(owner 在 GitHub 上一眼看得出发生了什么) */
 const DUP_MERGED_COMMENT_20260910 = '[系统] 重复工单,已并入 #';
 
+/**
+ * ★★★ X132-E(owner 09-11 14:30):同一设备**追加**留言时,把 issue 标题刷新成
+ * 最新那条留言的摘要 + 该条的日期 —— 首条开单时的标题逻辑不变(仍在 `deliver` 里
+ * 那一句 `titleFromDesc(...)`,这个函数只管「已经有一条 issue 了,又来一条」的场景)。
+ *
+ * ★ 标题内容规则**与首条完全同一套**:直接复用调用方已经算好的 `titleFromDesc(desc, …)`
+ *   结果(长度截断 / 换行折叠 / GitHub 256 字上限——`titleFromDesc` 截到 60 字远低于此——
+ *   都是同一个函数产出,不重新发明一套规则)。这里不做单独的敏感信息剥离:首条标题本身
+ *   也没有额外的手机号/身份证过滤,唯一的处理就是 `titleFromDesc`,追加时原样复用。
+ * ★ PATCH 失败(限流 / 网络 / issue 号不存在)**不影响**已经落地的评论,也不影响用户早就
+ *   拿到的 200 —— 整个函数跑在 `waitUntil` 里,失败只静默记一条日志,不抛出。
+ * 2026.09.11 Naron
+ */
+async function retitleIssue_claudecode_20260911(token, issueNumber, title) {
+  try {
+    const res = await gh(token, 'PATCH', `/repos/${REPO}/issues/${issueNumber}`, { title });
+    if (!res.ok) {
+      console.log('[retitle] PATCH 标题失败,issue #' + issueNumber + ' status ' + res.status + ' ' + (res.err || ''));
+    }
+  } catch (e) {
+    console.log('[retitle] PATCH 标题异常,issue #' + issueNumber + ' ' + (e && e.message));
+  }
+}
+
 /** 北京时间的 'YYYY-MM-DD HH:mm[:ss]'(Workers 跑在 UTC,offset 自己加) */
 function bj_claudecode_20260908(withSec) {
   const d = new Date(Date.now() + 8 * 3600 * 1000).toISOString();
@@ -215,6 +239,9 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
     if (existing > 0) {
       const app = await appendUserMessage_claudecode_20260908(ghToken, existing, bodyCore, log, logLines);
       if (app.ok) {
+        // ★★★ X132-E:这就是「同设备追加留言」—— 标题刷新成这一条的摘要 + 这一条的日期。
+        //   `title` 已经在上面用这次请求的 desc + 这次请求的时间算过了,直接复用。
+        await retitleIssue_claudecode_20260911(ghToken, existing, title);
         // 兜底搜出来的号也补进索引,下次就走主路径(顺手把锁换成真号 ⇒ 不用再还)
         if (deviceId !== '' && kv && existing !== myIssue) {
           try { await kv.put('ticket:' + deviceId, String(existing)); lockDevice = ''; } catch (e) {}
@@ -223,8 +250,12 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
         //   第一层(开单后等 5 秒再收敛)本质上还是在跟 GitHub 的读副本赛跑,只是把窗口挪宽,
         //   赛输了就漏。这一层不依赖时间:哪怕上一次漏了,下一条消息到来时照样并掉 ⇒
         //   重复帖**最多活到这台设备的下一条消息**。这里不用等(没有刚开出来的兄弟帖要等副本)。
+        //   ★ 标题也带过去:如果这一条最终被并到别的号上(k2 !== existing),真正“最新”
+        //     的那个号是 k2,标题要刷在 k2 身上,不是刷在即将被关掉的 existing 上——
+        //     reconcile 内部会在合并分支里再 retitle 一次 k2,这里先给 existing 上的这次
+        //     调用不算白做:大多数时候(没有并发)existing 就是 k2,已经刷好了。
         const k2 = await reconcileDeviceIssues_claudecode_20260910(
-          ghToken, deviceId, existing, bodyCore, log, logLines, 0);
+          ghToken, deviceId, existing, bodyCore, log, logLines, 0, title);
         if (k2 > 0 && k2 !== existing && deviceId !== '' && kv) {
           try { await kv.put('ticket:' + deviceId, String(k2)); } catch (e) {}
         }
@@ -241,8 +272,11 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
         try { await kv.put('ticket:' + deviceId, String(created)); lockDevice = ''; } catch (e) {}
       }
       // ★★★ 事后收敛(见下面 reconcile 的注释):锁只降概率,这一步才保证最终收敛
+      // ★ 这里是「首条」路径,标题已经在 POST /issues 里按首条规则设过了(首条逻辑不变)——
+      //   传 `title` 进去只是给「万一撞上并发、这条其实要并进另一条」的分支兜底用,
+      //   不会在「没有并发,created 就是 keep」的正常情况下多打一次 PATCH(见 reconcile 内判断)。
       const keep = await reconcileDeviceIssues_claudecode_20260910(
-        ghToken, deviceId, created, bodyCore, log, logLines, RECONCILE_DELAY_MS_20260910);
+        ghToken, deviceId, created, bodyCore, log, logLines, RECONCILE_DELAY_MS_20260910, title);
       if (keep > 0 && keep !== created && deviceId !== '' && kv) {
         try { await kv.put('ticket:' + deviceId, String(keep)); } catch (e) {}
       }
@@ -281,9 +315,13 @@ async function deliver_claudecode_20260910(env, kv, data, desc, testHeader) {
  * ★ 用 issues 列表接口而**不是** `/search/issues`:搜索索引有几十秒延迟,刚开的单搜不到;
  *   列表接口读的是数据库,刚开的单立刻就在。
  *
+ * ★ X132-E 追加的第 8 个参数 `title`:只有「这次调用本身就是一条追加留言」时调用方才会传
+ *   非空值(直接追加分支、以及首条创建分支的兜底——见两处调用点的注释)。合并分支里如果
+ *   `title` 非空,把它 PATCH 到最终留下的那个号上,让「标题 = 最新一条」这条规则在并发
+ *   合并之后依然成立;`title` 缺省(`''`)时保持旧行为,不多打这次 PATCH。
  * @returns {number} 最终应该用哪条工单(0 = 判不出来,调用方保持原样)
  */
-async function reconcileDeviceIssues_claudecode_20260910(token, deviceId, created, bodyCore, log, logLines, delayMs) {
+async function reconcileDeviceIssues_claudecode_20260910(token, deviceId, created, bodyCore, log, logLines, delayMs, title) {
   if (deviceId === '' || created <= 0) return created;
   const mark = deviceMark(deviceId);
 
@@ -318,6 +356,11 @@ async function reconcileDeviceIssues_claudecode_20260910(token, deviceId, create
 
   // 我是大号:① 把这条用户消息补到小号上 ② 在自己身上留一句说明并关掉
   await appendUserMessage_claudecode_20260908(token, keep, bodyCore, log, logLines);
+  // ★★★ X132-E:这条消息真正落地的号是 keep(不是 created),标题也要刷在 keep 上——
+  //   不管这次合并是从「追加」还是从「首条创建」那条路径触发的,keep 收到的都是
+  //   `bodyCore` 这条最新消息,标题就该反映它。`title` 理论上两个调用点都会传非空值,
+  //   `if (title)` 只是防御性写法,不代表存在一条会传空串的正常路径。
+  if (title) await retitleIssue_claudecode_20260911(token, keep, title);
   const base = `/repos/${REPO}/issues/${created}`;
   await gh(token, 'POST', base + '/comments',
     { body: DUP_MERGED_COMMENT_20260910 + keep + '(同一台设备的反馈接在同一条工单里)' });
